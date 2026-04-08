@@ -1,43 +1,42 @@
 
 
-# Plano: Gerar scripts V2 corrigidos com feedback do OpenClaw
+## Problema encontrado
 
-## Problemas identificados e correções
+Na conexão atual, **Salvar Outbound sempre conecta a Marcar Handoff**, independente do ramo do IF. Isso significa que o PATCH de handoff roda em **toda mensagem**, não só quando `action === handoff`.
 
-### 1. Conflito de garantia (CRÍTICO)
-**Onde**: `deploy_brain_v2_parte2.sh` — linhas 175, 182, 328, 348, 403, 404
-**Problema**: Bateria e traseira dizem "90 dias"
-**Correção**: Trocar para "1 ano" em todos os pontos:
-- `robot_brain_contract.md` → Bateria: 1 ano, Traseira: 1 ano
-- `brain_v2/SERVICE_RULES.md` → mesma correção
-- `brain_v2/ANTI_PATTERNS.md` → "NUNCA dizer que bateria tem garantia vitalícia (é 1 ano)" / idem traseira
+```text
+Fluxo ATUAL (bugado):
+IF → (true/false) → Enviar Evolution → Salvar Outbound → Marcar Handoff ← SEMPRE RODA
 
-### 2. Instrução do n8n inconsistente
-**Problema**: Em um lugar diz "Code node", em outro diz "Split In Batches"
-**Correção**: Padronizar para **Code node** (mais explícito e previsível, como o OpenClaw recomendou). Atualizar as instruções finais do script 2.
-
-### 3. Script 1 — sem alterações
-O script 1 (`deploy_brain_v2.sh`) não tem referências a garantia nos strings do runtime — o conflito era apenas na documentação do script 2. Ele permanece inalterado.
-
-## Entrega
-
-Vou gerar **2 arquivos corrigidos** em `/mnt/documents/`:
-
-- `deploy_brain_v2.sh` → mantém igual (sem mudanças necessárias)
-- `deploy_brain_v2_parte2_v2.sh` → versão corrigida com:
-  - Garantias bateria/traseira = 1 ano
-  - Instrução n8n padronizada (Code node)
-
-E um **bonus**: `deploy_brain_v2_unificado.sh` que junta os dois em um arquivo único para rodar de uma vez só.
-
-## Checklist de validação (para o OpenClaw rodar antes do deploy)
-
-```bash
-python3 -m py_compile robot_brain_api.py
-python3 -m py_compile robot_brain_runtime.py
-python3 -m py_compile robot_quote_engine.py
-python3 -m py_compile robot_scheduling.py
-curl -s http://localhost:8011/health
-curl -s -X POST http://localhost:8011/think -H 'Content-Type: application/json' -d '{"message":"boa tarde"}'
+Fluxo CORRETO:
+IF → (reply)   → Enviar Evolution → Salvar Outbound → FIM
+IF → (handoff) → Enviar Evolution → Salvar Outbound → Marcar Handoff
 ```
+
+## Solução
+
+Como ambos os ramos do IF convergem no mesmo node `Enviar Evolution`, a informação de branch se perde. A correção mais limpa:
+
+1. **Remover** a conexão direta `Salvar Outbound → Marcar Handoff`
+2. **Adicionar um segundo IF** após Salvar Outbound que checa `$json.action === "handoff"`
+3. Só o ramo TRUE desse segundo IF conecta a `Marcar Handoff`
+
+Alternativamente (mais simples): **reestruturar o IF original** para ter dois caminhos separados:
+- Ramo `reply`: Enviar Evolution → Salvar Outbound (fim)
+- Ramo `handoff`: Enviar Evolution cópia → Salvar Outbound cópia → Marcar Handoff
+
+**Recomendação**: opção 1 (segundo IF) — menos nodes, menos risco de dessincronizar.
+
+## Implementação
+
+Vou usar o MCP do n8n para:
+1. Validar o código do workflow corrigido
+2. Aplicar a atualização diretamente
+
+## Verificação dos outros nodes
+
+Além da correção do fluxo, vou confirmar:
+- `HTTP - Chamar Brain` usa `/think` com body só `message` ✓ (já aplicado)
+- `Code - Preparar Outbound` trata `replies[]` e `action` ✓ (já aplicado)
+- `HTTP - Marcar Handoff` faz PATCH correto no Supabase
 

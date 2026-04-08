@@ -1,54 +1,43 @@
 
 
-# Plano: Gerar deploy_brain_v2_parte2.sh
+# Plano: Gerar scripts V2 corrigidos com feedback do OpenClaw
 
-Script complementar que cobre o que faltou no primeiro deploy.
+## Problemas identificados e correções
 
-## Conteúdo do script
+### 1. Conflito de garantia (CRÍTICO)
+**Onde**: `deploy_brain_v2_parte2.sh` — linhas 175, 182, 328, 348, 403, 404
+**Problema**: Bateria e traseira dizem "90 dias"
+**Correção**: Trocar para "1 ano" em todos os pontos:
+- `robot_brain_contract.md` → Bateria: 1 ano, Traseira: 1 ano
+- `brain_v2/SERVICE_RULES.md` → mesma correção
+- `brain_v2/ANTI_PATTERNS.md` → "NUNCA dizer que bateria tem garantia vitalícia (é 1 ano)" / idem traseira
 
-### 1. `robot_brain_api.py` corrigido
-- Endpoint `/think` passa a devolver `replies: [...]` (array) em vez de `reply: "..."` (string única)
-- Mantém compatibilidade: se o runtime retornar string antiga, wrapa em array automaticamente
-- Baseado no código original que o Brunão já colou aqui
+### 2. Instrução do n8n inconsistente
+**Problema**: Em um lugar diz "Code node", em outro diz "Split In Batches"
+**Correção**: Padronizar para **Code node** (mais explícito e previsível, como o OpenClaw recomendou). Atualizar as instruções finais do script 2.
 
-### 2. `robot_brain_contract.md` atualizado
-- Documento de referência com as 3 fases comerciais (Apresentação, Regras/Valores, Condução)
-- Regras por serviço (tela, bateria, traseira)
-- Âncoras comerciais e garantias
-- Baseado no conteúdo do brain_v2/ que já foi enviado
-
-### 3. Pasta `brain_v2/` completa
-Todos os 7 arquivos que o Brunão já compartilhou:
-- `README.md`
-- `SYSTEM_PROMPT.md`
-- `SERVICE_RULES.md`
-- `STYLE_EXAMPLES.md`
-- `ANTI_PATTERNS.md`
-- `HANDOFF_RULES.md`
-- `OPEN_QUESTIONS.md`
-
-## Formato
-
-Mesmo padrão do primeiro script:
-- Backup automático dos originais
-- Escrita via heredoc ou base64
-- Instruções no final sobre ordem de execução
-
-## Uso
-
-```bash
-# Primeiro roda o original
-bash deploy_brain_v2.sh
-
-# Depois roda o complemento
-bash deploy_brain_v2_parte2.sh
-
-# Reinicia o brain
-pkill -f robot_brain_api.py
-cd /root/.openclaw/workspace/projects/ihelpu-robo && nohup python3 robot_brain_api.py &
-```
+### 3. Script 1 — sem alterações
+O script 1 (`deploy_brain_v2.sh`) não tem referências a garantia nos strings do runtime — o conflito era apenas na documentação do script 2. Ele permanece inalterado.
 
 ## Entrega
 
-Arquivo único: `/mnt/documents/deploy_brain_v2_parte2.sh`
+Vou gerar **2 arquivos corrigidos** em `/mnt/documents/`:
+
+- `deploy_brain_v2.sh` → mantém igual (sem mudanças necessárias)
+- `deploy_brain_v2_parte2_v2.sh` → versão corrigida com:
+  - Garantias bateria/traseira = 1 ano
+  - Instrução n8n padronizada (Code node)
+
+E um **bonus**: `deploy_brain_v2_unificado.sh` que junta os dois em um arquivo único para rodar de uma vez só.
+
+## Checklist de validação (para o OpenClaw rodar antes do deploy)
+
+```bash
+python3 -m py_compile robot_brain_api.py
+python3 -m py_compile robot_brain_runtime.py
+python3 -m py_compile robot_quote_engine.py
+python3 -m py_compile robot_scheduling.py
+curl -s http://localhost:8011/health
+curl -s -X POST http://localhost:8011/think -H 'Content-Type: application/json' -d '{"message":"boa tarde"}'
+```
 

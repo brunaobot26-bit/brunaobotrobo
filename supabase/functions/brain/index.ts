@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 // ==================== LOOKUP DATA ====================
-import lookupData from "./lookup.json" with { type: "json" };
+const lookupData = JSON.parse(Deno.readTextFileSync(new URL("./lookup.json", import.meta.url).pathname));
 
 // ==================== TEXT NORMALIZATION ====================
 function normalizeText(text: string): string {

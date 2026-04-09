@@ -341,7 +341,7 @@ async function extractIntent(message: string): Promise<{ service: string | null;
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-mini",
         temperature: 0,
         max_tokens: 150,
         messages: [
@@ -829,7 +829,16 @@ async function processStateMachine(
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
 
-    // 4º — Fallback
+    // 4º — Negociação (desconto, parcelar, etc.)
+    if (/\b(desconto|negociar|negociação|negociacao|parcelar|condição|condicao)\b/.test(t)) {
+      replies.push("Vou te encaminhar para um colega que pode ver uma condição especial pra ti. 😊");
+      state.stage = "handoff";
+      state.handoff_reason = "Negociação pós-orçamento";
+      state.handoff_ack_sent = true;
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+
+    // 5º — Fallback
     replies.push(`Posso te ajudar com mais alguma coisa? Se quiser agendar, é só me dizer! 😊`);
     return { replies, action: "reply", state };
   }
@@ -920,7 +929,7 @@ serve(async (req) => {
       });
     }
 
-    if (!message.trim()) {
+    if (!message.trim() && messageType === "text") {
       return new Response(JSON.stringify({ replies: [], action: "skip", state: {} }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

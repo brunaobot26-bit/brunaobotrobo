@@ -505,6 +505,7 @@ async function processStateMachine(
     replies.push(msg);
     state.stage = "handoff";
     state.handoff_reason = `Múltiplos serviços: ${multiServices.join(", ")}`;
+    state.handoff_ack_sent = true;
     return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
   }
 

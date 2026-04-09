@@ -493,28 +493,49 @@ async function processStateMachine(
     return { replies, action: "handoff", state, handoff_reason: "Aparelho não-Apple" };
   }
   
-  // ---- HANDLE NON-IPHONE APPLE DEVICES (handoff) ----
-  if (state.device_type && ["ipad", "macbook", "apple_watch", "airpods"].includes(state.device_type)) {
-    const deviceLabel = { ipad: "iPad", macbook: "MacBook", apple_watch: "Apple Watch", airpods: "AirPods" }[state.device_type] || state.device_type;
+  // ---- HANDLE HANDOFF: non-iPhone devices OR iPhone with unsupported service ----
+  const isNonIphoneApple = state.device_type && ["ipad", "macbook", "apple_watch", "airpods"].includes(state.device_type);
+  const isIphoneUnsupported = state.device_type === "iphone" && !state.service_type && isUnsupportedService(message);
+  
+  if (isNonIphoneApple || isIphoneUnsupported) {
+    const deviceLabels: Record<string, string> = { ipad: "iPad", macbook: "MacBook", apple_watch: "Apple Watch", airpods: "AirPods", iphone: "iPhone" };
+    const deviceLabel = deviceLabels[state.device_type!] || state.device_type!;
     
     if (!state.greeted) {
-      if (state.model || detectedService) {
-        replies.push(`${greeting}! Eu sou o ${identity.intro}. Vou encaminhar seu atendimento para um colega especialista em ${deviceLabel}. 😊`);
-      } else {
-        replies.push(`${greeting}! Eu sou o ${identity.intro}. Atendemos ${deviceLabel} sim! Para adiantar, me conta qual é o modelo e o que aconteceu com ele? Assim conseguimos agilizar o seu atendimento. 😊`);
-      }
       state.greeted = true;
+      
+      if (store.open) {
+        if (state.model || detectedService || isIphoneUnsupported) {
+          replies.push(`${greeting}! Eu sou o ${identity.intro}. Vou encaminhar seu atendimento para um colega especialista. 😊`);
+        } else {
+          replies.push(`${greeting}! Eu sou o ${identity.intro}. Atendemos ${deviceLabel} sim! Para adiantar, me conta qual é o modelo e o que aconteceu com ele? Assim conseguimos agilizar o seu atendimento. 😊`);
+        }
+      } else {
+        state.closed_notice_sent = true;
+        const hasDetails = state.model || detectedService || isIphoneUnsupported;
+        let msg = `${greeting}! Eu sou o ${identity.intro}. ${isNonIphoneApple ? `Atendemos ${deviceLabel} sim! ` : ""}😊\n\nEstamos fechados neste momento. Nosso horário de atendimento é ${store.schedule}. Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`;
+        if (!hasDetails) {
+          msg += `\n\nPara agilizarmos seu atendimento, me fala qual o problema do seu aparelho e o modelo.`;
+        }
+        replies.push(msg);
+      }
     } else {
-      replies.push(`Vou encaminhar seu atendimento para um colega especialista. 😊`);
-    }
-    
-    if (!store.open && !state.closed_notice_sent) {
-      replies.push(`Estamos fechados neste momento. Nosso horário de atendimento é ${store.schedule}. Assim que abrirmos, daremos andamento ao seu atendimento! 😊`);
-      state.closed_notice_sent = true;
+      if (store.open) {
+        replies.push(`Vou encaminhar seu atendimento para um colega especialista. 😊`);
+      } else {
+        if (!state.closed_notice_sent) {
+          replies.push(`Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
+          state.closed_notice_sent = true;
+        } else {
+          replies.push(`Anotado! Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
+        }
+      }
     }
     
     state.stage = "handoff";
-    state.handoff_reason = `Atendimento ${deviceLabel} — encaminhar para especialista`;
+    state.handoff_reason = isIphoneUnsupported
+      ? `Serviço iPhone não cotado automaticamente — encaminhar para especialista`
+      : `Atendimento ${deviceLabel} — encaminhar para especialista`;
     return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
   }
   

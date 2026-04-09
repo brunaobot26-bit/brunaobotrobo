@@ -1,0 +1,2 @@
+DELETE FROM messages WHERE conversation_id = 'abe083b7-8243-4a4c-bc27-b2a4241c2fd5';
+UPDATE conversations SET bot_state = '{}', handoff = false, human_active = false WHERE id = 'abe083b7-8243-4a4c-bc27-b2a4241c2fd5';

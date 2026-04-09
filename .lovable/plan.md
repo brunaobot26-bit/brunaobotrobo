@@ -1,47 +1,44 @@
 
 
-## Três correções finais antes do teste
+## Resposta sobre ERP + Fix do lookup combo
 
-### 1. Bug mídia sem legenda — Correção simples
+### A padronização no banco afeta o ERP?
 
-**O que acontece hoje:** Quando o cliente envia áudio/foto sem texto (legenda), `message` vem vazio → linha 923 (`if (!message.trim())`) retorna `skip` antes de chegar ao media check (linha 952). Resultado: o bot ignora completamente a mídia.
+**Sim, seria sobrescrita.** O sync ERP (`sync-erp-pricing`) gera o campo `model` automaticamente a partir do nome do produto no Lightspeed (linha 37-62). Se eu padronizar `iphone 12/12 pro` → `iphone 12 / 12 pro` no banco, na próxima sync (6h da manhã) o ERP vai recriar a linha com o nome original. Ou seja, mexer no banco não resolve — o fix tem que ser no código do Brain.
 
-**O que tu quer (e eu concordo):** Toda e qualquer mídia → handoff. Sempre.
+### Solução: fallback no `getQuote` (sem tocar no banco)
 
-**Correção:** Na linha 923, mudar para só fazer skip se for mensagem de texto vazia:
+Alterar a função `getQuote` no `supabase/functions/brain/index.ts` para:
 
-```typescript
-// Antes:
-if (!message.trim()) { return skip; }
-
-// Depois:
-if (!message.trim() && messageType === "text") { return skip; }
-```
-
-Assim, áudio/foto/vídeo sem legenda continuam no fluxo e caem no media check (linha 952) que já faz o handoff corretamente (silencioso se loja aberta, mensagem gentil se fechada).
-
-### 2. Negociação no post_quote
-
-Adicionar um path entre a linha 829 (dúvida diagnóstica) e 832 (fallback):
+1. **Tentar match exato** (como hoje) — resolve 95% dos modelos
+2. **Se falhar, normalizar e procurar** — remove espaços ao redor de `/` e busca em todas as keys normalizadas
 
 ```typescript
-if (/\b(desconto|negociar|negociação|negociacao|parcelar|condição|condicao)\b/.test(t)) {
-  replies.push("Vou te encaminhar para um colega que pode ver uma condição especial pra ti. 😊");
-  state.stage = "handoff";
-  state.handoff_reason = "Negociação pós-orçamento";
-  state.handoff_ack_sent = true;
-  return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+function getQuote(serviceType, model) {
+  const key = `${serviceType}::${model}`;
+  // 1. Match exato
+  if (lookupData.items_by_group_model[key]) return ...;
+  
+  // 2. Fallback: procurar modelo dentro de keys combo
+  const norm = (s) => s.replace(/\s*\/\s*/g, '/');
+  for (const [k, v] of Object.entries(lookupData.items_by_group_model)) {
+    if (k.startsWith(serviceType + "::") && norm(k).includes(norm(model))) {
+      return v;
+    }
+  }
+  return null;
 }
 ```
 
-### 3. Modelo GPT no extractIntent
-
-Linha 344: trocar `gpt-4o-mini` → `gpt-4.1-mini` (modelo mais recente da OpenAI, melhor em classificação/extração, mesmo custo do 4o-mini).
+Isso resolve:
+- Cliente diz "iPhone 12 Pro" → bot detecta `iphone 12 pro` → match exato falha → fallback encontra `iphone 12 / 12 pro` e `iphone 12/12 pro` → retorna Infinity (R$ 899,90) **e** Essential (R$ 499,90)
+- Cliente diz "iPhone 12" → match exato falha para tela (não existe `tela iphone::iphone 12` solo) → fallback encontra os combos → retorna ambas variantes
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — 3 correções (media vazia, negociação post_quote, modelo GPT)
+- `supabase/functions/brain/index.ts` — expandir `getQuote` com fallback normalizado
 - Deploy da edge function `brain`
+- Reset conversa de teste
 
 ### Risco
-Baixo — são correções cirúrgicas em pontos isolados.
+Zero para modelos com row própria (match exato continua prioritário). Modelos combo passam a funcionar sem mexer no banco nem no sync ERP.
 

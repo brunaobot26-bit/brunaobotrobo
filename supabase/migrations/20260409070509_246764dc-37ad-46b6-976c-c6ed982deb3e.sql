@@ -1,0 +1,1 @@
+UPDATE conversations SET status = 'closed' WHERE id = 'eadb3336-b3b3-44cb-af46-00070264543a' AND status = 'open'

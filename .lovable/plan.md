@@ -1,37 +1,23 @@
 
 
-## Duas correções no Brain
+## Consultar API Lightspeed e extrair preços de serviço
 
-### Problema 1: Bateria iPhone 8 sem preço no lookupData
+### Situação
+A ferramenta de fetch não suporta headers customizados (Authorization). Preciso executar um script Python/curl para chamar a API com o bearer token.
 
-O `lookupData.items_by_group_model` na linha 25 do `brain/index.ts` tem baterias apenas do iPhone 11 em diante. Falta a entrada `"bateria iphone::iphone 8"`.
+### O que vou fazer
 
-**Correção:** Adicionar a entrada no objeto `items_by_group_model` com os dados corretos do ERP (preço peça + mão de obra). Também verificar se falta iPhone 7, 6s, etc. — todos os modelos antigos que estão na lista `models` mas não têm preço de bateria.
+1. **Script Python** que:
+   - Chama `GET /api/2.0/products?page_size=500&after=0` com o header `Authorization: Bearer lsxs_pt_...`
+   - Pagina automaticamente (se 500 resultados, busca próxima página)
+   - Filtra por `active=true`, `variant_parent_id=null`, e `tag_ids` contendo as tags de serviço
+   - Organiza por categoria: Tela iPhone, Bateria iPhone, Vidro iPhone, Traseira de Vidro, Mão de Obra
+   - Exibe nome + preço de cada produto
 
-Preciso que você me confirme: qual é o preço da bateria do iPhone 8 (peça + mão de obra)? Ou posso pegar do ERP. Se for o mesmo padrão dos outros: peça R$ X + mão de obra R$ 99,90.
+2. **Output**: Tabela organizada por categoria com todos os produtos e preços, salva em `/mnt/documents/erp_service_products.csv`
 
-Vou consultar o ERP para ver se tem o dado.
-
-### Problema 2: Mensagem de handoff quando preço não encontrado + loja fechada
-
-**Arquivo:** `supabase/functions/brain/index.ts`, linha 452
-
-**Atual:**
-```
-Infelizmente não encontrei o preço para esse modelo/serviço no momento. Vou te encaminhar para um colega que pode te ajudar! 😊
-```
-
-**Novo:** Verificar `store.open` antes de montar a frase:
-- Se loja **aberta**: manter como está — "Vou te encaminhar para um colega que pode te ajudar!"
-- Se loja **fechada**: "Assim que abrirmos, vou te encaminhar para um colega que pode te ajudar!"
-
-### Implementação
-
-1. Consultar ERP para pegar preço de bateria iPhone 8 (e outros modelos antigos se existirem)
-2. Adicionar entrada `"bateria iphone::iphone 8"` no lookupData
-3. Alterar linha 452 para verificar `store.open` e ajustar a frase
-4. Deploy da edge function
+3. **Próximo passo**: Com os dados em mãos, criar a view/tabela no Supabase e atualizar o Brain para ler dinamicamente
 
 ### Risco
-Baixo — são alterações pontuais no lookup estático e numa string condicional.
+Nenhum — é uma consulta read-only na API do ERP.
 

@@ -1,0 +1,1 @@
+UPDATE conversations SET status = 'closed', bot_state = '{}', updated_at = now() WHERE id = '78079a83-7693-4925-9051-9d2abb145940';

@@ -152,6 +152,7 @@ interface BotState {
   handoff_reason: string | null;
   closed_notice_sent: boolean;
   last_processed_at: string | null;
+  handoff_ack_sent: boolean;
 }
 
 function defaultState(): BotState {
@@ -167,6 +168,7 @@ function defaultState(): BotState {
     handoff_reason: null,
     closed_notice_sent: false,
     last_processed_at: null,
+    handoff_ack_sent: false,
   };
 }
 
@@ -435,6 +437,95 @@ async function processStateMachine(
   // Update identity in state
   state.identity = identity.name;
   
+  // ---- HANDOFF KEYWORD MAPS ----
+  const handoffKeywordMap: Array<{ keywords: string[]; reason: string; message_open: string; message_closed: string }> = [
+    {
+      keywords: ["comprar", "vender", "usado", "seminovo", "troco", "troca de aparelho", "venda"],
+      reason: "Cliente quer comprar/vender aparelho",
+      message_open: "Vou te encaminhar para um colega que pode te ajudar com isso. 😊",
+      message_closed: "Assim que a loja abrir, um colega vai te chamar para te ajudar com isso. 😊",
+    },
+    {
+      keywords: ["atendente", "pessoa", "falar com alguém", "falar com alguem", "gerente", "supervisor", "falar com humano", "quero falar com"],
+      reason: "Cliente pediu para falar com humano",
+      message_open: "Claro! Vou te encaminhar para um colega agora. 😊",
+      message_closed: "Claro! Assim que a loja abrir, um colega vai te chamar. 😊",
+    },
+    {
+      keywords: ["reclamação", "reclamacao", "insatisfeito", "péssimo", "pessimo", "horrível", "horrivel", "nunca mais", "absurdo"],
+      reason: "Cliente com reclamação",
+      message_open: "Sinto muito pela experiência! Vou te encaminhar para um colega resolver isso da melhor forma. 😊",
+      message_closed: "Sinto muito pela experiência! Assim que a loja abrir, um colega vai te chamar para resolver isso. 😊",
+    },
+    {
+      keywords: ["desconto", "negociar", "negociação", "negociacao", "parcelar mais", "condição especial", "condicao especial", "preço melhor", "preco melhor", "mais barato"],
+      reason: "Cliente quer negociar preço/desconto",
+      message_open: "Vou te encaminhar para um colega que pode ver uma condição especial pra ti. 😊",
+      message_closed: "Assim que a loja abrir, vou te encaminhar para um colega que pode ver uma condição especial pra ti. 😊",
+    },
+    {
+      keywords: ["apple care", "applecare", "seguro", "laudo técnico", "laudo tecnico", "nota fiscal", "garantia apple"],
+      reason: "Dúvida técnica/legal complexa",
+      message_open: "Vou te encaminhar para um colega especialista que pode te ajudar com isso. 😊",
+      message_closed: "Assim que a loja abrir, um colega especialista vai te chamar para te ajudar. 😊",
+    },
+  ];
+
+  function detectHandoffKeyword(msg: string): { reason: string; message_open: string; message_closed: string } | null {
+    const t = msg.toLowerCase();
+    for (const group of handoffKeywordMap) {
+      for (const kw of group.keywords) {
+        if (t.includes(kw)) return group;
+      }
+    }
+    return null;
+  }
+
+  function detectMultipleServices(msg: string): string[] {
+    const t = msg.toLowerCase();
+    const found: string[] = [];
+    if (/\b(tela|display|frontal)\b/.test(t)) found.push("tela");
+    if (/\b(bateria)\b/.test(t)) found.push("bateria");
+    if (/\b(traseira|vidro traseiro|back glass)\b/.test(t)) found.push("traseira");
+    return found;
+  }
+
+  // ---- CHECK HANDOFF RULES BEFORE MAIN FLOW ----
+  // 1. Multiple services
+  const multiServices = detectMultipleServices(message);
+  if (multiServices.length >= 2 && state.stage !== "handoff" && state.stage !== "non_apple_rejected") {
+    if (!state.greeted) {
+      state.greeted = true;
+      const closedNotice = !store.open ? `\n\nEstamos fechados neste momento. Nosso horário de atendimento é ${store.schedule}.` : "";
+      replies.push(`${greeting}! Eu sou o ${identity.intro}. 😊${closedNotice}`);
+    }
+    const msg = store.open
+      ? "Para múltiplos serviços, vou te encaminhar para um colega que pode montar o melhor pacote pra ti. 😊"
+      : "Para múltiplos serviços, assim que a loja abrir, um colega vai te chamar para montar o melhor pacote pra ti. 😊";
+    replies.push(msg);
+    state.stage = "handoff";
+    state.handoff_reason = `Múltiplos serviços: ${multiServices.join(", ")}`;
+    state.handoff_ack_sent = true;
+    return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+  }
+
+  // 2. Handoff keywords (buy/sell, human request, complaint, negotiation, tech/legal)
+  if (state.stage !== "handoff" && state.stage !== "non_apple_rejected" && state.stage !== "post_quote") {
+    const handoffMatch = detectHandoffKeyword(message);
+    if (handoffMatch) {
+      if (!state.greeted) {
+        state.greeted = true;
+        const closedNotice = !store.open ? `\n\nEstamos fechados neste momento. Nosso horário de atendimento é ${store.schedule}.` : "";
+        replies.push(`${greeting}! Eu sou o ${identity.intro}. 😊${closedNotice}`);
+      }
+      replies.push(store.open ? handoffMatch.message_open : handoffMatch.message_closed);
+      state.stage = "handoff";
+      state.handoff_reason = handoffMatch.reason;
+      state.handoff_ack_sent = true;
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+  }
+
   // ---- EXTRACT INTENT ----
   const isAwaitingModel = state.stage === "awaiting_model";
   const detectedService = detectService(message);
@@ -495,6 +586,7 @@ async function processStateMachine(
     }
     state.greeted = true;
     state.stage = "non_apple_rejected";
+    state.handoff_ack_sent = true;
     return { replies, action: "handoff", state, handoff_reason: "Aparelho não-Apple" };
   }
   
@@ -541,6 +633,7 @@ async function processStateMachine(
     state.handoff_reason = isIphoneUnsupported
       ? `Serviço iPhone não cotado automaticamente — encaminhar para especialista`
       : `Atendimento ${deviceLabel} — encaminhar para especialista`;
+    state.handoff_ack_sent = true;
     return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
   }
   
@@ -593,6 +686,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = "Serviço iPhone não cotado automaticamente — encaminhar para especialista";
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -635,6 +729,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = `Preço não encontrado: ${state.service_type} ${state.model}`;
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -680,6 +775,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = "Cliente quer agendar atendimento";
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -687,6 +783,7 @@ async function processStateMachine(
       replies.push(`Entendo! Vou te encaminhar para um colega que pode te ajudar melhor com isso. 😊`);
       state.stage = "handoff";
       state.handoff_reason = "Cliente com objeção ou dúvida pós-orçamento";
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -694,8 +791,17 @@ async function processStateMachine(
     return { replies, action: "reply", state };
   }
   
-  // STAGE: Handoff already done - don't reply
+  // STAGE: Handoff already done - send ack once, then skip
   if (state.stage === "handoff" || state.stage === "non_apple_rejected") {
+    if (!state.handoff_ack_sent) {
+      state.handoff_ack_sent = true;
+      if (store.open) {
+        replies.push("Já estou te encaminhando para um colega, em breve ele vai te chamar. 😊");
+      } else {
+        replies.push("Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊");
+      }
+      return { replies, action: "reply", state };
+    }
     return { replies: [], action: "skip", state };
   }
   

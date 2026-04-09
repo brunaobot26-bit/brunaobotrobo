@@ -214,12 +214,25 @@ ${services}
 ${contactName ? `Nome: ${contactName}` : "Nome: não informado"}
 ${context.last_quote_data ? `Último orçamento: ${JSON.stringify(context.last_quote_data)}` : "Sem orçamento anterior."}
 
+## FORMATO DE RESPOSTA
+- Se precisar enviar mais de uma mensagem separada, use exatamente "---" (três hifens) em uma linha sozinha para separar.
+- Cada bloco entre "---" será enviado como uma mensagem individual no WhatsApp.
+- Mantenha a ORDEM correta: primeiro a mensagem padrão, depois os preços, depois a pergunta.
+- Exemplo de resposta com múltiplas mensagens:
+Mensagem 1 aqui
+---
+Mensagem 2 aqui
+---
+Mensagem 3 aqui
+
 ## ANTI-PATTERNS (NUNCA FAÇA ISSO)
 - NUNCA pergunte algo que o cliente já respondeu no histórico.
 - NUNCA diga "Bom dia" de noite ou "Boa noite" de dia.
 - NUNCA responda "não entendi" se o cliente deu info clara.
 - NUNCA entre em loop perguntando a mesma coisa.
 - NUNCA apresente preço sem usar get_quote primeiro.
+- NUNCA repita a saudação (Boa noite/Bom dia/Boa tarde) se já cumprimentou antes no histórico.
+- NUNCA comece mensagem com "Oi" ou saudação se já está no meio da conversa.
 `;
 }
 

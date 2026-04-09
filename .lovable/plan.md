@@ -1,50 +1,47 @@
 
 
-## Tratar mídia (áudio/foto/vídeo) como handoff
+## Três correções finais antes do teste
 
-### O que mudar
+### 1. Bug mídia sem legenda — Correção simples
 
-No `supabase/functions/brain/index.ts`, o n8n envia o campo `message_type` no body (ex: `"text"`, `"audio"`, `"image"`, `"video"`, `"sticker"`, `"document"`). Hoje o brain não lê esse campo.
+**O que acontece hoje:** Quando o cliente envia áudio/foto sem texto (legenda), `message` vem vazio → linha 923 (`if (!message.trim())`) retorna `skip` antes de chegar ao media check (linha 952). Resultado: o bot ignora completamente a mídia.
 
-### Implementação
+**O que tu quer (e eu concordo):** Toda e qualquer mídia → handoff. Sempre.
 
-**1. Ler `message_type` do body** (linha ~889):
+**Correção:** Na linha 923, mudar para só fazer skip se for mensagem de texto vazia:
+
 ```typescript
-const messageType: string = body.message_type || "text";
+// Antes:
+if (!message.trim()) { return skip; }
+
+// Depois:
+if (!message.trim() && messageType === "text") { return skip; }
 ```
 
-**2. Guardar `message_type` no `saveInboundMessage`** — já salva como `"text"` hardcoded, passar o valor real.
+Assim, áudio/foto/vídeo sem legenda continuam no fluxo e caem no media check (linha 952) que já faz o handoff corretamente (silencioso se loja aberta, mensagem gentil se fechada).
 
-**3. Checar mídia ANTES do check de mensagem vazia** (linha ~922), logo após o failsafe de `contactId/channelId`:
+### 2. Negociação no post_quote
+
+Adicionar um path entre a linha 829 (dúvida diagnóstica) e 832 (fallback):
 
 ```typescript
-if (messageType !== "text") {
-  // Save inbound message with correct type
-  await saveInboundMessage(conversationId, contactId, message || `[${messageType}]`, externalMessageId, messageTimestamp, messageType);
-  
-  if (store.open) {
-    // Handoff silencioso — sem mensagem
-    return { replies: [], action: "handoff", state, handoff_reason: `Mídia: ${messageType}` };
-  } else {
-    // iHelper — mensagem gentil
-    return {
-      replies: ["Desculpa, não consigo ouvir áudios e ver imagens/vídeos ainda. Por gentileza, adiantar por escrito aqui o que tu precisas, senão amanhã assim que abrirmos nosso técnico certificado Apple te retorna. 😊"],
-      action: "handoff",
-      state,
-      handoff_reason: `Mídia: ${messageType}`
-    };
-  }
+if (/\b(desconto|negociar|negociação|negociacao|parcelar|condição|condicao)\b/.test(t)) {
+  replies.push("Vou te encaminhar para um colega que pode ver uma condição especial pra ti. 😊");
+  state.stage = "handoff";
+  state.handoff_reason = "Negociação pós-orçamento";
+  state.handoff_ack_sent = true;
+  return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
 }
 ```
 
-**Nota:** A checagem de mídia precisa acontecer DEPOIS da sessão ser criada (para ter `store` e `conversationId`), mas ANTES do debounce e do `think()`. Vou posicionar entre a linha 949 (save inbound) e 951 (debounce), pois nesse ponto já temos `store`, `state` e `conversationId`.
+### 3. Modelo GPT no extractIntent
 
-**4. Atualizar `saveInboundMessage`** para aceitar `messageType` como parâmetro opcional (default `"text"`).
+Linha 344: trocar `gpt-4o-mini` → `gpt-4.1-mini` (modelo mais recente da OpenAI, melhor em classificação/extração, mesmo custo do 4o-mini).
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — ler `message_type`, checar mídia, handoff silencioso/mensagem
+- `supabase/functions/brain/index.ts` — 3 correções (media vazia, negociação post_quote, modelo GPT)
 - Deploy da edge function `brain`
 
 ### Risco
-Baixo — é uma guarda no início do fluxo. Mensagens de texto continuam passando normalmente.
+Baixo — são correções cirúrgicas em pontos isolados.
 

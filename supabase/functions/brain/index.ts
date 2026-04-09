@@ -778,6 +778,23 @@ async function processStateMachine(
   if (state.stage === "post_quote") {
     const t = message.toLowerCase();
 
+    // 0º — Detectar se cliente menciona OUTRO serviço além do já orçado → handoff múltiplos
+    const additionalServices = detectMultipleServices(t);
+    const alreadyHasService = (state.service_type || "").toLowerCase();
+    const allServices = new Set<string>();
+    if (/tela/.test(alreadyHasService)) allServices.add("tela");
+    if (/bateria/.test(alreadyHasService)) allServices.add("bateria");
+    if (/traseira/.test(alreadyHasService)) allServices.add("traseira");
+    additionalServices.forEach(s => allServices.add(s));
+
+    if (allServices.size >= 2) {
+      replies.push("Entendi! Como são mais de um serviço, vou te encaminhar para um técnico certificado Apple que vai preparar o melhor orçamento pra você. 😊");
+      state.stage = "handoff";
+      state.handoff_reason = `Múltiplos serviços: ${[...allServices].join(" + ")}`;
+      state.handoff_ack_sent = true;
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+
     const hasScheduleIntent = /\b(agendar|agenda|marcar|horário|horario|quero|vamos|bora)\b/.test(t);
     const hasDiagnosticDoubt = /(\bserá\b|\bsera\b|\bcerteza\b|\bdiagnóstico\b|\bdiagnostico\b|\bpode ser\b|\bcomo saber\b|\bproblema\b|\bdefeito\b|\bcausa\b|\bsaúde\b|\bsaude\b|\d+\s*%)/.test(t);
 
@@ -786,7 +803,7 @@ async function processStateMachine(
       if (!store.open) {
         replies.push(`Nosso horário de atendimento é ${store.schedule}. Se chegar cedinho, conseguimos dar prioridade pro seu iPhone! Vou encaminhar para o Emerson finalizar o agendamento assim que abrirmos. 😊`);
       } else {
-        replies.push(`Ótimo! Vou te encaminhar para o Emerson finalizar o agendamento. 😊`);
+        replies.push(`Ótimo! Vamos seguir com seu agendamento então. 😊`);
       }
       state.stage = "handoff";
       state.handoff_reason = "Cliente quer agendar atendimento";

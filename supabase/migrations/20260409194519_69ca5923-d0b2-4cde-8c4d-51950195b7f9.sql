@@ -1,0 +1,1 @@
+UPDATE public.store_units SET address_line_1 = 'Rua Teste 1234', neighborhood = 'Bairro Teste', city = 'Porto Alegre', state = 'RS' WHERE slug = 'ihelpu-teste';

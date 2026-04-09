@@ -1,0 +1,1 @@
+UPDATE public.conversations SET status = 'closed' WHERE status = 'open';

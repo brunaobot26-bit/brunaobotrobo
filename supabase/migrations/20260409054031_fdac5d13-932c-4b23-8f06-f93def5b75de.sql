@@ -1,0 +1,1 @@
+UPDATE conversations SET status = 'closed', bot_state = '{}', updated_at = now() WHERE contact_id IN (SELECT id FROM contacts WHERE phone_digits = '5551981404179') AND status != 'closed';

@@ -455,28 +455,30 @@ async function processStateMachine(
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
-    // CONSOLIDATED: Pre-service + Prices in ONE message to guarantee order
-    const preServiceText = !state.pre_service_sent ? getPreServiceMessage(state.service_type) : "";
-    state.pre_service_sent = true;
+    // Reply 1: Pre-service info (delay_before: 0 — immediate)
+    if (!state.pre_service_sent) {
+      const preServiceText = getPreServiceMessage(state.service_type);
+      if (preServiceText) {
+        replies.push({ text: preServiceText, delay_before: 0 });
+      }
+      state.pre_service_sent = true;
+    }
     
+    // Reply 2: Prices (delay_before: 2 — wait 2s after pre-service)
     const priceMessages = formatQuoteMessages(state.service_type, state.model, items);
     const priceText = priceMessages.join("\n\n");
+    replies.push({ text: priceText, delay_before: 2 });
     
-    // Combine pre-service + prices into a single reply
-    if (preServiceText) {
-      replies.push(`${preServiceText}\n\n${priceText}`);
-    } else {
-      replies.push(priceText);
-    }
-    
-    // Closing question as separate (2nd) message
+    // Reply 3: Closing question (delay_before: 3 — wait 3s after prices)
+    let closingText: string;
     if (state.service_type === "bateria iphone") {
-      replies.push(`Você sabe me dizer a saúde da sua bateria? Pode verificar em Ajustes → Bateria → Saúde da Bateria. Se estiver abaixo de 80%, recomendamos a troca! 😊\n\nFicou alguma dúvida? Gostaria de agendar o atendimento?`);
+      closingText = `Você sabe me dizer a saúde da sua bateria? Pode verificar em Ajustes → Bateria → Saúde da Bateria. Se estiver abaixo de 80%, recomendamos a troca! 😊\n\nFicou alguma dúvida? Gostaria de agendar o atendimento?`;
     } else if (state.service_type === "traseira de vidro") {
-      replies.push(`Importante: a traseira fragilizada pode acarretar riscos ao aparelho, então recomendamos consertar o quanto antes.\n\nFicou alguma dúvida? Gostaria de agendar um horário para o reparo? 😊`);
+      closingText = `Importante: a traseira fragilizada pode acarretar riscos ao aparelho, então recomendamos consertar o quanto antes.\n\nFicou alguma dúvida? Gostaria de agendar um horário para o reparo? 😊`;
     } else {
-      replies.push(`Ficou alguma dúvida? Gostaria de agendar o atendimento? 😊`);
+      closingText = `Ficou alguma dúvida? Gostaria de agendar o atendimento? 😊`;
     }
+    replies.push({ text: closingText, delay_before: 3 });
     
     state.quote_sent = true;
     state.stage = "post_quote";

@@ -668,6 +668,11 @@ serve(async (req) => {
   }
 
   try {
+    // Load pricing data from DB on first request (or if not loaded yet)
+    if (!pricingLoaded) {
+      await loadPricingData();
+      pricingLoaded = true;
+    }
     const body = await req.json();
     const message: string = body.message || "";
     const contactId: string = body.contact_id || "";

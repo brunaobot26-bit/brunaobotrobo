@@ -486,13 +486,17 @@ async function processWithGPT(
     } catch { /* ignore */ }
   }
 
-  // Split reply using explicit "---" separator, fallback to double newlines
+  // Split reply using explicit "---" separator
   let replies: string[];
   if (reply.includes("\n---\n") || reply.includes("\n---")) {
     replies = reply.split(/\n?---\n?/).map((s: string) => s.trim()).filter(Boolean);
   } else {
-    // Fallback: keep as single message to avoid order issues
     replies = [reply.trim()];
+  }
+
+  // Prepend presentation messages (Phase 1) if any
+  if (presentationPrefix.length > 0) {
+    replies = [...presentationPrefix, ...replies];
   }
 
   return { replies: replies.length ? replies : [reply], action, data };

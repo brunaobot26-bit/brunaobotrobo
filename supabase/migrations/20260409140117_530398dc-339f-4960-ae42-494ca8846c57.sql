@@ -1,0 +1,1 @@
+UPDATE conversations SET bot_state = '{}', status = 'closed', bot_enabled = true, handoff = false, human_active = false WHERE contact_id IN (SELECT id FROM contacts WHERE phone_digits = '5551981404179') AND status = 'active';

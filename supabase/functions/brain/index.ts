@@ -497,6 +497,25 @@ async function processStateMachine(
   return { replies, action: "reply", state };
 }
 
+// ==================== SAVE INBOUND MESSAGE ====================
+async function saveInboundMessage(conversationId: string, contactId: string, message: string, externalMessageId?: string, messageTimestamp?: string) {
+  if (!supabase || !conversationId) return;
+  try {
+    await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      contact_id: contactId,
+      direction: "inbound",
+      sender_type: "customer",
+      message_type: "text",
+      content_text: message,
+      external_message_id: externalMessageId || null,
+      received_at: messageTimestamp ? new Date(Number(messageTimestamp) * 1000).toISOString() : new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("Failed to save inbound:", e);
+  }
+}
+
 // ==================== MAIN HANDLER ====================
 
 serve(async (req) => {
@@ -511,8 +530,10 @@ serve(async (req) => {
     const channelId: string = body.whatsapp_channel_id || "";
     const customerFirstName: string = body.contact_first_name || "";
     const customerName: string = body.contact_display_name || customerFirstName || "amigo";
+    const externalMessageId: string = body.external_message_id || "";
+    const messageTimestamp: string = body.message_timestamp || "";
     
-    // Legacy support: also accept context.conversation_id
+    // Legacy support
     const legacyConversationId: string = body.context?.conversation_id || body.conversation_id || "";
 
     console.log("=== BRAIN INPUT ===", JSON.stringify({
@@ -520,7 +541,6 @@ serve(async (req) => {
       contact_id: contactId,
       channel_id: channelId,
       customer: customerName,
-      legacy_conv_id: legacyConversationId,
     }));
 
     if (!message.trim()) {
@@ -529,17 +549,15 @@ serve(async (req) => {
       });
     }
 
-    // ---- SESSION MANAGEMENT: find or create conversation ----
+    // ---- SESSION MANAGEMENT ----
     let conversationId = "";
     let state: BotState = defaultState();
     
     if (supabase && contactId && channelId) {
-      // NEW PATH: Brain manages session internally
       const session = await findOrCreateConversation(contactId, channelId);
       conversationId = session.conversationId;
       state = session.state;
     } else if (supabase && legacyConversationId) {
-      // LEGACY PATH: use conversation_id from n8n
       conversationId = legacyConversationId;
       const { data: conv } = await supabase
         .from("conversations")
@@ -551,7 +569,10 @@ serve(async (req) => {
       }
     }
 
-    // ---- DEBOUNCE: wait buffer then check for stale execution ----
+    // ---- SAVE INBOUND MESSAGE ----
+    await saveInboundMessage(conversationId, contactId, message, externalMessageId, messageTimestamp);
+
+    // ---- DEBOUNCE ----
     if (supabase && conversationId) {
       await new Promise(r => setTimeout(r, BUFFER_WINDOW_MS));
       
@@ -568,7 +589,6 @@ serve(async (req) => {
           ? recentMsgs.filter((m: any) => m.direction === "inbound")
           : recentMsgs.slice(0, lastOutIdx).filter((m: any) => m.direction === "inbound");
         
-        // Check if this execution is the latest
         const latestInbound = pendingInbound[0];
         if (latestInbound && latestInbound.content_text !== message) {
           console.log("=== BRAIN SKIP (stale) ===", { my_msg: message, latest: latestInbound.content_text });
@@ -577,7 +597,6 @@ serve(async (req) => {
           });
         }
         
-        // Aggregate all pending inbound into one message
         var effectiveMessage = message;
         if (pendingInbound.length > 1) {
           const aggregated = pendingInbound.reverse().map((m: any) => m.content_text).filter(Boolean).join("\n");
@@ -591,7 +610,7 @@ serve(async (req) => {
       var effectiveMessage = message;
     }
 
-    // Reload state after debounce (in case another execution updated it)
+    // Reload state after debounce
     if (supabase && conversationId) {
       const { data: freshConv } = await supabase
         .from("conversations")

@@ -431,8 +431,9 @@ async function processStateMachine(
   state.identity = identity.name;
   
   // ---- EXTRACT INTENT ----
+  const isAwaitingModel = state.stage === "awaiting_model";
   const detectedService = detectService(message);
-  const detectedModel = detectModel(message);
+  const detectedModel = detectModel(message, isAwaitingModel);
   const detectedDevice = detectDevice(message);
   
   // Map service keywords to group names

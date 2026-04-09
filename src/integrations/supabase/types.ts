@@ -287,6 +287,7 @@ export type Database = {
       conversations: {
         Row: {
           bot_enabled: boolean
+          bot_state: Json | null
           contact_id: string
           created_at: string
           handoff: boolean
@@ -301,6 +302,7 @@ export type Database = {
         }
         Insert: {
           bot_enabled?: boolean
+          bot_state?: Json | null
           contact_id: string
           created_at?: string
           handoff?: boolean
@@ -315,6 +317,7 @@ export type Database = {
         }
         Update: {
           bot_enabled?: boolean
+          bot_state?: Json | null
           contact_id?: string
           created_at?: string
           handoff?: boolean

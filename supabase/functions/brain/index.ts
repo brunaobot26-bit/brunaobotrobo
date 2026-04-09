@@ -550,7 +550,13 @@ async function processStateMachine(
   
   // Fill slots (never overwrite existing with null)
   if (detectedService && !state.service_type) state.service_type = detectedService;
-  if (detectedDevice && !state.device_type) state.device_type = detectedDevice;
+  if (detectedDevice) {
+    if (!state.device_type || (state.stage === "awaiting_model" && detectedDevice !== state.device_type)) {
+      state.device_type = detectedDevice;
+      // If corrected to non-iPhone, clear iPhone-specific service
+      if (detectedDevice !== "iphone") state.service_type = null;
+    }
+  }
   if (detectedModel && !state.model) {
     state.model = detectedModel;
   }

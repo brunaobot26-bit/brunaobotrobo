@@ -1,9 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.8";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const BUFFER_WINDOW_MS = 6000;
+const MAX_CONVERSATION_MESSAGES = 30;
+const MAX_HISTORY_MESSAGES = 16;
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("VITE_SUPABASE_URL");
+const SUPABASE_KEY =
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY") ??
+  Deno.env.get("VITE_SUPABASE_PUBLISHABLE_KEY");
+
+const supabase = SUPABASE_URL && SUPABASE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : null;
 
 // ==================== LOOKUP DATA ====================
 const lookupData: any = {"labor_item": {"product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "name": "Mão de Obra", "sku": "10681", "price_including_tax": 99.9, "tag_ids": ["76510b18-468a-4fc8-8159-cef6743b8f9c"], "item_type": "labor"}, "groups": {"tela iphone": ["tela", "display", "frontal"], "bateria iphone": ["bateria"], "traseira de vidro": ["traseira", "traseira de vidro", "vidro traseiro", "back glass"]}, "models": {"iphone se 2ª geração": ["iphone se 2", "iphone se 2020", "se 2", "se 2a geração"], "iphone se 3ª geração": ["iphone se 3", "iphone se 2022", "se 3", "se 3a geração"], "iphone xs max": ["iphone xsmax", "xs max"], "iphone xs": ["iphone xs"], "iphone xr": ["iphone xr"], "iphone x": ["iphone x"], "iphone 11 pro max": ["iphone 11 pro max"], "iphone 11 pro": ["iphone 11 pro"], "iphone 11": ["iphone 11"], "iphone 12 pro max": ["iphone 12 pro max"], "iphone 12 pro": ["iphone 12 pro"], "iphone 12 mini": ["iphone 12 mini"], "iphone 12": ["iphone 12"], "iphone 13 pro max": ["iphone 13 pro max"], "iphone 13 pro": ["iphone 13 pro"], "iphone 13 mini": ["iphone 13 mini"], "iphone 13": ["iphone 13"], "iphone 14 pro max": ["iphone 14 pro max"], "iphone 14 pro": ["iphone 14 pro"], "iphone 14 plus": ["iphone 14 plus"], "iphone 14": ["iphone 14"], "iphone 15 pro max": ["iphone 15 pro max"], "iphone 15 pro": ["iphone 15 pro"], "iphone 15 plus": ["iphone 15 plus"], "iphone 15": ["iphone 15"], "iphone 16 pro max": ["iphone 16 pro max"], "iphone 16 pro": ["iphone 16 pro"], "iphone 16 plus": ["iphone 16 plus"], "iphone 16": ["iphone 16"], "iphone 16e": ["iphone 16e"], "iphone 17 pro max": ["iphone 17 pro max"], "iphone 17 pro": ["iphone 17 pro"], "iphone 17": ["iphone 17"], "iphone air": ["iphone air"], "iphone 8 plus": ["iphone 8 plus"], "iphone 8": ["iphone 8"], "iphone 7 plus": ["iphone 7 plus"], "iphone 7": ["iphone 7"], "iphone 6s plus": ["iphone 6s plus"], "iphone 6s": ["iphone 6s"], "iphone 6 plus": ["iphone 6 plus"], "iphone 6": ["iphone 6"], "iphone 5s/se": ["iphone 5s", "iphone se antigo", "iphone se 1", "5s/se"], "iphone 5c": ["iphone 5c"], "iphone 5": ["iphone 5"]}, "items_by_group_model": {"bateria iphone::iphone 11": [{"group": "bateria iphone", "model": "iPhone 11", "variant": null, "service_product_id": "3ffcc3c9-68b5-d0ca-46b4-d4f58b1be39e", "service_name": "Bateria iPhone 11", "service_sku": "11443", "service_price": 200.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 299.9}], "bateria iphone::iphone 11 pro": [{"group": "bateria iphone", "model": "iPhone 11 Pro", "variant": null, "service_product_id": "2f4db9eb-20e6-bd8b-d288-e84d4f6fe5bd", "service_name": "Bateria iPhone 11 PRO", "service_sku": "11456", "service_price": 300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 399.9}], "bateria iphone::iphone 11 pro max": [{"group": "bateria iphone", "model": "iPhone 11 Pro Max", "variant": null, "service_product_id": "d65055ed-d1f1-416c-9401-a317c31b3c9e", "service_name": "Bateria iPhone 11 PRO MAX", "service_sku": "11796", "service_price": 300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 399.9}], "bateria iphone::iphone 12 mini": [{"group": "bateria iphone", "model": "iPhone 12 Mini", "variant": null, "service_product_id": "4127ee20-6289-4cda-b3bd-a1414589d15e", "service_name": "Bateria iPhone 12 Mini", "service_sku": "12360", "service_price": 250.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 349.9}], "bateria iphone::iphone 12 pro": [{"group": "bateria iphone", "model": "iPhone 12 Pro", "variant": null, "service_product_id": "ff82698a-60a9-4702-82b1-f6abae954b6f", "service_name": "Bateria iPhone 12 / 12 PRO", "service_sku": "12361", "service_price": 250.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 349.9}], "bateria iphone::iphone 12 pro max": [{"group": "bateria iphone", "model": "iPhone 12 Pro Max", "variant": null, "service_product_id": "71f89955-b4d4-4523-9ede-bd7744592bb6", "service_name": "Bateria iPhone 12 PRO MAX", "service_sku": "12411", "service_price": 300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 399.9}], "bateria iphone::iphone 13": [{"group": "bateria iphone", "model": "iPhone 13", "variant": null, "service_product_id": "8475145f-d428-4499-bb66-a1ae4b598076", "service_name": "Bateria iPhone 13", "service_sku": "12730", "service_price": 300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 399.9}], "bateria iphone::iphone 13 mini": [{"group": "bateria iphone", "model": "iPhone 13 Mini", "variant": null, "service_product_id": "d2bc7b7b-258f-48d6-b19e-8f04c7c616b3", "service_name": "Bateria iPhone 13 Mini", "service_sku": "12850", "service_price": 300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 399.9}], "bateria iphone::iphone 13 pro": [{"group": "bateria iphone", "model": "iPhone 13 Pro", "variant": null, "service_product_id": "9811b5e6-8975-4327-b0a5-af46971bdc56", "service_name": "Bateria iPhone 13 PRO", "service_sku": "12731", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}], "bateria iphone::iphone 13 pro max": [{"group": "bateria iphone", "model": "iPhone 13 Pro Max", "variant": null, "service_product_id": "f3d68f28-d7d6-4605-9e83-17d9aa6421f0", "service_name": "Bateria iPhone 13 PRO MAX", "service_sku": "12732", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}], "bateria iphone::iphone 14": [{"group": "bateria iphone", "model": "iPhone 14", "variant": null, "service_product_id": "2c7b29e9-704d-4945-8d09-ec9904edde0b", "service_name": "Bateria iPhone 14", "service_sku": "13301", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}], "bateria iphone::iphone 14 plus": [{"group": "bateria iphone", "model": "iPhone 14 Plus", "variant": null, "service_product_id": "6ee24013-2fe4-4c89-a60a-36165f775881", "service_name": "Bateria iPhone 14 Plus", "service_sku": "13302", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}], "bateria iphone::iphone 14 pro": [{"group": "bateria iphone", "model": "iPhone 14 Pro", "variant": null, "service_product_id": "a38cdcf6-4b4b-4c5a-9b99-17c3ed0a7c74", "service_name": "Bateria iPhone 14 PRO", "service_sku": "13303", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}], "bateria iphone::iphone 14 pro max": [{"group": "bateria iphone", "model": "iPhone 14 Pro Max", "variant": null, "service_product_id": "20342eb4-a64c-43db-be96-3779dc80b226", "service_name": "Bateria iPhone 14 PRO MAX", "service_sku": "13304", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}], "bateria iphone::iphone 15": [{"group": "bateria iphone", "model": "iPhone 15", "variant": null, "service_product_id": "b1d8ffc3-b2c2-4932-b9fa-96f065f3e70a", "service_name": "Bateria iPhone 15", "service_sku": "13585", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}], "bateria iphone::iphone 15 plus": [{"group": "bateria iphone", "model": "iPhone 15 Plus", "variant": null, "service_product_id": "9f07b8af-176e-4619-b26d-39a306fbd943", "service_name": "Bateria iPhone 15 Plus", "service_sku": "13586", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}], "bateria iphone::iphone 15 pro": [{"group": "bateria iphone", "model": "iPhone 15 Pro", "variant": null, "service_product_id": "60525c84-809d-4939-91fd-a20438455196", "service_name": "Bateria iPhone 15 PRO", "service_sku": "13587", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}], "bateria iphone::iphone 15 pro max": [{"group": "bateria iphone", "model": "iPhone 15 Pro Max", "variant": null, "service_product_id": "1cc013ef-7a9f-40cc-b576-33a5a3726e87", "service_name": "Bateria iPhone 15 PRO MAX", "service_sku": "13588", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}], "bateria iphone::iphone 16": [{"group": "bateria iphone", "model": "iPhone 16", "variant": null, "service_product_id": "9ce9d8fd-8ce4-45bf-9406-0252d0ff524a", "service_name": "Bateria iPhone 16", "service_sku": "13969", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}], "bateria iphone::iphone 16 plus": [{"group": "bateria iphone", "model": "iPhone 16 Plus", "variant": null, "service_product_id": "32304bb2-08e6-44b2-a84e-78a89a5e1b90", "service_name": "Bateria iPhone 16 Plus", "service_sku": "13970", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}], "bateria iphone::iphone 16 pro": [{"group": "bateria iphone", "model": "iPhone 16 Pro", "variant": null, "service_product_id": "d2f7b7f2-d01e-4ab2-b82e-a3e3a71f8413", "service_name": "Bateria iPhone 16 PRO", "service_sku": "13971", "service_price": 450.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 549.9}], "bateria iphone::iphone 16 pro max": [{"group": "bateria iphone", "model": "iPhone 16 Pro Max", "variant": null, "service_product_id": "40a2e1ff-31ad-44f9-b3ac-f62a4d9a20c4", "service_name": "Bateria iPhone 16 PRO MAX", "service_sku": "13972", "service_price": 450.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 549.9}], "tela iphone::iphone 11": [{"group": "tela iphone", "model": "iPhone 11", "variant": "essential", "service_product_id": "be2f1f93-c19e-46af-b1c3-14e20b24da7e", "service_name": "Tela iPhone 11 Essential", "service_sku": "11350", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}, {"group": "tela iphone", "model": "iPhone 11", "variant": "infinity", "service_product_id": "1fc62afe-ca4d-45fd-b5bc-7b2e3eef1b52", "service_name": "Tela iPhone 11 Infinity", "service_sku": "11349", "service_price": 450.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 549.9}], "tela iphone::iphone 11 pro": [{"group": "tela iphone", "model": "iPhone 11 Pro", "variant": "essential", "service_product_id": "9a8fa3ac-e84e-4fc0-a8db-ffc46e4e12da", "service_name": "Tela iPhone 11 PRO Essential", "service_sku": "11457", "service_price": 550.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 649.9}, {"group": "tela iphone", "model": "iPhone 11 Pro", "variant": "infinity", "service_product_id": "38eff07b-bb1a-409f-b6a8-8e6b3a97b0a1", "service_name": "Tela iPhone 11 PRO Infinity", "service_sku": "11458", "service_price": 700.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 799.9}], "tela iphone::iphone 11 pro max": [{"group": "tela iphone", "model": "iPhone 11 Pro Max", "variant": "essential", "service_product_id": "c6b0ad0c-3a5d-453b-b903-aa9cdf4f5cd4", "service_name": "Tela iPhone 11 PRO MAX Essential", "service_sku": "11459", "service_price": 550.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 649.9}, {"group": "tela iphone", "model": "iPhone 11 Pro Max", "variant": "infinity", "service_product_id": "d6b27bf3-3e0e-49c9-9e6b-0d3dcb1c3e0b", "service_name": "Tela iPhone 11 PRO MAX Infinity", "service_sku": "11460", "service_price": 700.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 799.9}], "tela iphone::iphone 12 mini": [{"group": "tela iphone", "model": "iPhone 12 Mini", "variant": "essential", "service_product_id": "a7bc5e39-cb2b-4d60-858a-2bb3c4d65c2f", "service_name": "Tela iPhone 12 Mini Essential", "service_sku": "12362", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}, {"group": "tela iphone", "model": "iPhone 12 Mini", "variant": "infinity", "service_product_id": "e6c26a2e-3fe0-4c08-a5c1-5d5e4d0f6e7a", "service_name": "Tela iPhone 12 Mini Infinity", "service_sku": "12363", "service_price": 550.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 649.9}], "tela iphone::iphone 12 pro": [{"group": "tela iphone", "model": "iPhone 12 Pro", "variant": "essential", "service_product_id": "b8cd6f4a-dc3c-4e71-969b-3cc4d5e76d3f", "service_name": "Tela iPhone 12/12 PRO Essential", "service_sku": "12364", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}, {"group": "tela iphone", "model": "iPhone 12 Pro", "variant": "infinity", "service_product_id": "f9de7053-ed4d-4f82-a7ac-4dd5e6f87e40", "service_name": "Tela iPhone 12/12 PRO Infinity", "service_sku": "12365", "service_price": 600.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 699.9}], "tela iphone::iphone 12 pro max": [{"group": "tela iphone", "model": "iPhone 12 Pro Max", "variant": "essential", "service_product_id": "c9ef8164-fe5e-4093-b8bd-5ee6f7098f51", "service_name": "Tela iPhone 12 PRO MAX Essential", "service_sku": "12366", "service_price": 500.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 599.9}, {"group": "tela iphone", "model": "iPhone 12 Pro Max", "variant": "infinity", "service_product_id": "da008275-0f6f-41a4-c9ce-6ff708ba9062", "service_name": "Tela iPhone 12 PRO MAX Infinity", "service_sku": "12367", "service_price": 700.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 799.9}], "tela iphone::iphone 13 mini": [{"group": "tela iphone", "model": "iPhone 13 Mini", "variant": "essential", "service_product_id": "eb119386-1070-42b5-dadf-70087dc0ab73", "service_name": "Tela iPhone 13 Mini Essential", "service_sku": "12853", "service_price": 450.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 549.9}, {"group": "tela iphone", "model": "iPhone 13 Mini", "variant": "infinity", "service_product_id": "fc22a497-2181-43c6-ebf0-8119ce1bc84", "service_name": "Tela iPhone 13 Mini Infinity", "service_sku": "12854", "service_price": 600.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 699.9}], "tela iphone::iphone 13": [{"group": "tela iphone", "model": "iPhone 13", "variant": "essential", "service_product_id": "0d33b5a8-3292-44d7-fc01-9230de2cd95", "service_name": "Tela iPhone 13 Essential", "service_sku": "12733", "service_price": 500.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 599.9}, {"group": "tela iphone", "model": "iPhone 13", "variant": "infinity", "service_product_id": "1e44c6b9-4303-45e8-0d12-a341ef3de06", "service_name": "Tela iPhone 13 Infinity", "service_sku": "12734", "service_price": 700.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 799.9}], "tela iphone::iphone 13 pro": [{"group": "tela iphone", "model": "iPhone 13 Pro", "variant": "essential", "service_product_id": "2f55d7ca-5414-46f9-1e23-b452f04ef17", "service_name": "Tela iPhone 13 PRO Essential", "service_sku": "12735", "service_price": 550.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 649.9}, {"group": "tela iphone", "model": "iPhone 13 Pro", "variant": "infinity", "service_product_id": "3066e8db-6525-470a-2f34-c563015f028", "service_name": "Tela iPhone 13 PRO Infinity", "service_sku": "12736", "service_price": 800.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 899.9}], "tela iphone::iphone 13 pro max": [{"group": "tela iphone", "model": "iPhone 13 Pro Max", "variant": "essential", "service_product_id": "4177f9ec-7636-481b-3045-d674126f139", "service_name": "Tela iPhone 13 PRO MAX Essential", "service_sku": "12737", "service_price": 550.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 649.9}, {"group": "tela iphone", "model": "iPhone 13 Pro Max", "variant": "infinity", "service_product_id": "5288009d-8747-492c-4156-e78523700", "service_name": "Tela iPhone 13 PRO MAX Infinity", "service_sku": "12738", "service_price": 900.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 999.9}], "tela iphone::iphone 14": [{"group": "tela iphone", "model": "iPhone 14", "variant": "essential", "service_product_id": "63990bae-9858-4a3d-5267-f89634811", "service_name": "Tela iPhone 14 Essential", "service_sku": "13305", "service_price": 500.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 599.9}, {"group": "tela iphone", "model": "iPhone 14", "variant": "infinity", "service_product_id": "74aa1cbf-a969-4b4e-6378-09a745922", "service_name": "Tela iPhone 14 Infinity", "service_sku": "13306", "service_price": 750.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 849.9}], "tela iphone::iphone 14 plus": [{"group": "tela iphone", "model": "iPhone 14 Plus", "variant": "essential", "service_product_id": "85bb2dc0-ba7a-4c5f-7489-1ab856a33", "service_name": "Tela iPhone 14 Plus Essential", "service_sku": "13307", "service_price": 550.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 649.9}, {"group": "tela iphone", "model": "iPhone 14 Plus", "variant": "infinity", "service_product_id": "96cc3ed1-cb8b-4d60-8590-2bc967b44", "service_name": "Tela iPhone 14 Plus Infinity", "service_sku": "13308", "service_price": 800.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 899.9}], "tela iphone::iphone 14 pro": [{"group": "tela iphone", "model": "iPhone 14 Pro", "variant": "essential", "service_product_id": "a7dd4fe2-dc9c-4e71-9601-3cda78c55", "service_name": "Tela iPhone 14 PRO Essential", "service_sku": "13309", "service_price": 700.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 799.9}, {"group": "tela iphone", "model": "iPhone 14 Pro", "variant": "infinity", "service_product_id": "b8ee500f3-edab-4f82-a712-4deb89d66", "service_name": "Tela iPhone 14 PRO Infinity", "service_sku": "13310", "service_price": 1000.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1099.9}], "tela iphone::iphone 14 pro max": [{"group": "tela iphone", "model": "iPhone 14 Pro Max", "variant": "essential", "service_product_id": "c9ff6114-febc-4093-b823-5efc9ae77", "service_name": "Tela iPhone 14 PRO MAX Essential", "service_sku": "13311", "service_price": 750.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 849.9}, {"group": "tela iphone", "model": "iPhone 14 Pro Max", "variant": "infinity", "service_product_id": "da007225-0fcd-41a4-c934-6f0dabe88", "service_name": "Tela iPhone 14 PRO MAX Infinity", "service_sku": "13312", "service_price": 1100.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1199.9}], "tela iphone::iphone 15": [{"group": "tela iphone", "model": "iPhone 15", "variant": "essential", "service_product_id": "eb118336-1fde-42b5-da4f-7009be1b99", "service_name": "Tela iPhone 15 Essential", "service_sku": "13589", "service_price": 600.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 699.9}, {"group": "tela iphone", "model": "iPhone 15", "variant": "infinity", "service_product_id": "fc229447-20ef-43c6-eb50-811ace2caa", "service_name": "Tela iPhone 15 Infinity", "service_sku": "13590", "service_price": 900.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 999.9}], "tela iphone::iphone 15 plus": [{"group": "tela iphone", "model": "iPhone 15 Plus", "variant": "essential", "service_product_id": "0d33a558-3100-44d7-fc61-923bde3cdbb", "service_name": "Tela iPhone 15 Plus Essential", "service_sku": "13591", "service_price": 650.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 749.9}, {"group": "tela iphone", "model": "iPhone 15 Plus", "variant": "infinity", "service_product_id": "1e44b669-4211-45e8-0d72-a342ef4decc", "service_name": "Tela iPhone 15 Plus Infinity", "service_sku": "13592", "service_price": 1000.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1099.9}], "tela iphone::iphone 15 pro": [{"group": "tela iphone", "model": "iPhone 15 Pro", "variant": "essential", "service_product_id": "2f55c77a-5322-46f9-1e83-b453f05efdd", "service_name": "Tela iPhone 15 PRO Essential", "service_sku": "13593", "service_price": 800.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 899.9}, {"group": "tela iphone", "model": "iPhone 15 Pro", "variant": "infinity", "service_product_id": "3066d88b-6433-470a-2f94-c564016feee", "service_name": "Tela iPhone 15 PRO Infinity", "service_sku": "13594", "service_price": 1200.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1299.9}], "tela iphone::iphone 15 pro max": [{"group": "tela iphone", "model": "iPhone 15 Pro Max", "variant": "essential", "service_product_id": "4177e99c-7544-481b-3045-d675127ffff", "service_name": "Tela iPhone 15 PRO MAX Essential", "service_sku": "13595", "service_price": 900.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 999.9}, {"group": "tela iphone", "model": "iPhone 15 Pro Max", "variant": "infinity", "service_product_id": "5288f99d-8655-492c-4116-e78624700", "service_name": "Tela iPhone 15 PRO MAX Infinity", "service_sku": "13596", "service_price": 1300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1399.9}], "tela iphone::iphone 16": [{"group": "tela iphone", "model": "iPhone 16", "variant": "essential", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111101", "service_name": "Tela iPhone 16 Essential", "service_sku": "13973", "service_price": 700.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 799.9}, {"group": "tela iphone", "model": "iPhone 16", "variant": "infinity", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111102", "service_name": "Tela iPhone 16 Infinity", "service_sku": "13974", "service_price": 1000.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1099.9}], "tela iphone::iphone 16 plus": [{"group": "tela iphone", "model": "iPhone 16 Plus", "variant": "essential", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111103", "service_name": "Tela iPhone 16 Plus Essential", "service_sku": "13975", "service_price": 750.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 849.9}, {"group": "tela iphone", "model": "iPhone 16 Plus", "variant": "infinity", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111104", "service_name": "Tela iPhone 16 Plus Infinity", "service_sku": "13976", "service_price": 1100.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1199.9}], "tela iphone::iphone 16 pro": [{"group": "tela iphone", "model": "iPhone 16 Pro", "variant": "essential", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111105", "service_name": "Tela iPhone 16 PRO Essential", "service_sku": "13977", "service_price": 900.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 999.9}, {"group": "tela iphone", "model": "iPhone 16 Pro", "variant": "infinity", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111106", "service_name": "Tela iPhone 16 PRO Infinity", "service_sku": "13978", "service_price": 1300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1399.9}], "tela iphone::iphone 16 pro max": [{"group": "tela iphone", "model": "iPhone 16 Pro Max", "variant": "essential", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111107", "service_name": "Tela iPhone 16 PRO MAX Essential", "service_sku": "13979", "service_price": 1000.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1099.9}, {"group": "tela iphone", "model": "iPhone 16 Pro Max", "variant": "infinity", "service_product_id": "a1b2c3d4-1111-4aaa-aaaa-111111111108", "service_name": "Tela iPhone 16 PRO MAX Infinity", "service_sku": "13980", "service_price": 1500.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 1599.9}], "traseira de vidro::iphone 11": [{"group": "traseira de vidro", "model": "iPhone 11", "variant": null, "service_product_id": "t11", "service_name": "Traseira de Vidro iPhone 11", "service_sku": "T11", "service_price": 250.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 349.9}], "traseira de vidro::iphone 12 pro": [{"group": "traseira de vidro", "model": "iPhone 12 Pro", "variant": null, "service_product_id": "t12p", "service_name": "Traseira de Vidro iPhone 12/12 Pro", "service_sku": "T12P", "service_price": 300.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 399.9}], "traseira de vidro::iphone 13": [{"group": "traseira de vidro", "model": "iPhone 13", "variant": null, "service_product_id": "t13", "service_name": "Traseira de Vidro iPhone 13", "service_sku": "T13", "service_price": 350.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 449.9}], "traseira de vidro::iphone 14": [{"group": "traseira de vidro", "model": "iPhone 14", "variant": null, "service_product_id": "t14", "service_name": "Traseira de Vidro iPhone 14", "service_sku": "T14", "service_price": 400.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 499.9}], "traseira de vidro::iphone 15": [{"group": "traseira de vidro", "model": "iPhone 15", "variant": null, "service_product_id": "t15", "service_name": "Traseira de Vidro iPhone 15", "service_sku": "T15", "service_price": 500.0, "labor_product_id": "33f84630-e342-1df5-cb63-7875ba8d44cf", "labor_name": "Mão de Obra", "labor_price": 99.9, "final_price": 599.9}]}};
@@ -105,6 +122,78 @@ function isStoreOpen(nowHour: number): boolean {
   return nowHour >= 9 && nowHour < 18;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toMillis(value?: string | null): number {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isInboundMessage(message: any): boolean {
+  return message?.direction === "inbound";
+}
+
+function isOutboundMessage(message: any): boolean {
+  return message?.direction === "outbound";
+}
+
+async function loadConversationMessages(conversationId: string): Promise<any[]> {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("messages")
+    .select("conversation_id, direction, sender_type, content_text, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true })
+    .limit(MAX_CONVERSATION_MESSAGES);
+
+  if (error) {
+    console.error("Failed to load conversation messages:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+function hasMessageAfter(messages: any[], isoTimestamp: string, predicate: (message: any) => boolean): boolean {
+  const threshold = toMillis(isoTimestamp);
+  return messages.some((message) => predicate(message) && toMillis(message.created_at) > threshold);
+}
+
+function buildBufferedConversation(messages: any[], fallbackMessage: string) {
+  const ordered = [...messages]
+    .filter((message) => (message.content_text || "").trim() || isOutboundMessage(message))
+    .sort((a, b) => toMillis(a.created_at) - toMillis(b.created_at));
+
+  let lastOutboundIndex = -1;
+  for (let index = 0; index < ordered.length; index++) {
+    if (isOutboundMessage(ordered[index])) lastOutboundIndex = index;
+  }
+
+  const pendingInbound = ordered
+    .slice(lastOutboundIndex + 1)
+    .filter((message) => isInboundMessage(message) && (message.content_text || "").trim());
+
+  const historySource = ordered.slice(Math.max(0, lastOutboundIndex + 1 - MAX_HISTORY_MESSAGES), lastOutboundIndex + 1);
+  const history = historySource
+    .filter((message) => (message.content_text || "").trim())
+    .map((message) => ({
+      role: isOutboundMessage(message) ? "assistant" : "user",
+      text: message.content_text,
+    }));
+
+  const combinedMessage = pendingInbound.map((message) => message.content_text.trim()).join("\n").trim() || fallbackMessage.trim();
+
+  return {
+    combinedMessage,
+    history,
+    pendingCount: pendingInbound.length,
+  };
+}
+
 // ==================== GPT INTEGRATION ====================
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
@@ -140,6 +229,7 @@ Você é um atendente de WhatsApp. Seja natural, educado, objetivo. Não seja ro
 - Respostas curtas e diretas. Nada de textão.
 - Emojis com moderação (1-2 por mensagem, não em todas).
 - Leia o histórico. Se o cliente já disse algo, não pergunte de novo.
+- Se já existe mensagem sua no histórico, NÃO repita saudação, NÃO se reapresente e siga do ponto em que a conversa parou.
 - Se o cliente diz "iPhone 13" sem Pro/Pro Max, é o 13 normal.
 - Use "---" em uma linha sozinha para separar mensagens diferentes no WhatsApp.
 
@@ -372,6 +462,10 @@ async function processWithGPT(
   } else if (effectiveGroup && (currentMsgModel || historyModel) && !history.some(h => h.role === "tool")) {
     phaseHint = `Já temos serviço e modelo. Use get_quote AGORA e apresente o orçamento (Fases 2 e 3).`;
   }
+
+  if (alreadyIntroduced) {
+    phaseHint += `${phaseHint ? " " : ""}IMPORTANTE: o assistente já cumprimentou o cliente antes. Continue a conversa sem repetir saudação nem apresentação.`;
+  }
   
   if (phaseHint) {
     chatMessages.unshift({ role: "system", content: phaseHint });
@@ -506,6 +600,7 @@ serve(async (req) => {
       const data = await req.json();
       console.log("=== BRAIN INPUT ===", JSON.stringify({ message: data.message, history_length: (data.history || []).length, history: data.history, context: data.context }));
       const message = data.message || "";
+      const requestStartedAt = new Date().toISOString();
 
       if (!message) {
         return new Response(JSON.stringify({ ok: false, error: "missing_message" }), {
@@ -513,21 +608,61 @@ serve(async (req) => {
         });
       }
 
-      const history = data.history || [];
-      const context = data.context || {};
+      let history = data.history || [];
+      let context = data.context || {};
+      let effectiveMessage = message;
       const apiKey = Deno.env.get("OPENAI_API_KEY");
+
+      if (context.conversation_id) {
+        await sleep(BUFFER_WINDOW_MS);
+
+        const conversationMessages = await loadConversationMessages(context.conversation_id);
+        if (conversationMessages.length) {
+          const newerInboundArrived = hasMessageAfter(conversationMessages, requestStartedAt, isInboundMessage);
+          const outboundAlreadySent = hasMessageAfter(conversationMessages, requestStartedAt, isOutboundMessage);
+
+          if (newerInboundArrived || outboundAlreadySent) {
+            console.log("=== BRAIN SKIP ===", JSON.stringify({
+              conversation_id: context.conversation_id,
+              reason: newerInboundArrived ? "newer_inbound_arrived" : "outbound_already_sent",
+            }));
+
+            return new Response(JSON.stringify({
+              ok: true,
+              replies: [],
+              action: "reply",
+              data: { skipped: true, buffered: true },
+            }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+
+          const bufferedConversation = buildBufferedConversation(conversationMessages, message);
+          effectiveMessage = bufferedConversation.combinedMessage;
+          history = bufferedConversation.history;
+          context = {
+            ...context,
+            buffered_message_count: bufferedConversation.pendingCount,
+          };
+
+          console.log("=== BRAIN BUFFER ===", JSON.stringify({
+            conversation_id: context.conversation_id,
+            pending_count: bufferedConversation.pendingCount,
+            history_length: history.length,
+            effective_message: effectiveMessage,
+          }));
+        }
+      }
 
       let result;
       if (apiKey) {
         try {
-          result = await processWithGPT(message, history, context, apiKey);
+          result = await processWithGPT(effectiveMessage, history, context, apiKey);
         } catch (err) {
           console.error("GPT failed, using fallback:", err);
-          result = fallbackReply(message);
+          result = fallbackReply(effectiveMessage);
         }
       } else {
         console.warn("No OPENAI_API_KEY, using fallback");
-        result = fallbackReply(message);
+        result = fallbackReply(effectiveMessage);
       }
 
       return new Response(JSON.stringify({

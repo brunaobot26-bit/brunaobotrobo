@@ -181,27 +181,88 @@ function getTimeGreeting(): string {
   return "Boa noite";
 }
 
-function getStoreInfo(): { open: boolean; schedule: string; identity: { name: string; intro: string } } {
+interface StoreInfo {
+  open: boolean;
+  schedule: string;
+  identity: { name: string; intro: string };
+  address: string | null;
+}
+
+function getStoreInfo(storeUnit?: any): StoreInfo {
   const now = new Date();
   const brHour = (now.getUTCHours() - 3 + 24) % 24;
   const dayOfWeek = now.getUTCDay();
   
   let open = false;
-  if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-    open = brHour >= 9 && brHour < 18;
-  } else if (dayOfWeek === 6) {
-    open = brHour >= 9 && brHour < 13;
+  let schedule = "segunda a sexta das 9h às 18h, e sábados das 9h às 13h";
+
+  if (storeUnit) {
+    const mfOpen = storeUnit.monday_friday_open ? parseInt(storeUnit.monday_friday_open.split(":")[0]) : 9;
+    const mfClose = storeUnit.monday_friday_close ? parseInt(storeUnit.monday_friday_close.split(":")[0]) : 18;
+    const satOpen = storeUnit.saturday_open ? parseInt(storeUnit.saturday_open.split(":")[0]) : 9;
+    const satClose = storeUnit.saturday_close ? parseInt(storeUnit.saturday_close.split(":")[0]) : 13;
+    const satClosed = storeUnit.saturday_closed ?? false;
+
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      open = brHour >= mfOpen && brHour < mfClose;
+    } else if (dayOfWeek === 6 && !satClosed) {
+      open = brHour >= satOpen && brHour < satClose;
+    }
+    schedule = `segunda a sexta das ${mfOpen}h às ${mfClose}h${satClosed ? "" : `, e sábados das ${satOpen}h às ${satClose}h`}`;
+  } else {
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      open = brHour >= 9 && brHour < 18;
+    } else if (dayOfWeek === 6) {
+      open = brHour >= 9 && brHour < 13;
+    }
   }
   
   const identity = open
     ? { name: "Emerson", intro: "Emerson, da iHelpU" }
     : { name: "iHelper", intro: "iHelper, assistente virtual da iHelpU" };
+
+  let address: string | null = null;
+  if (storeUnit?.address_line_1) {
+    const parts = [storeUnit.address_line_1];
+    if (storeUnit.neighborhood) parts.push(storeUnit.neighborhood);
+    const cityState = [storeUnit.city, storeUnit.state].filter(Boolean).join("/");
+    if (cityState) parts.push(cityState);
+    address = parts.join(" - ");
+  }
   
-  return {
-    open,
-    schedule: "segunda a sexta das 9h às 18h, e sábados das 9h às 13h",
-    identity,
-  };
+  return { open, schedule, identity, address };
+}
+
+async function loadStoreUnit(channelId: string): Promise<any | null> {
+  if (!supabase) return null;
+  try {
+    const { data: channel } = await supabase
+      .from("whatsapp_channels")
+      .select("store_unit_id")
+      .eq("id", channelId)
+      .single();
+    if (!channel?.store_unit_id) return null;
+    const { data: store } = await supabase
+      .from("store_units")
+      .select("*")
+      .eq("id", channel.store_unit_id)
+      .single();
+    return store || null;
+  } catch {
+    return null;
+  }
+}
+
+function isLocationQuestion(msg: string): boolean {
+  const t = msg.toLowerCase();
+  const patterns = [
+    "onde fica", "qual o endereço", "qual é o endereço", "qual endereço",
+    "endereço da loja", "endereco", "como chego", "localização", "localizacao",
+    "onde vocês ficam", "onde voces ficam", "onde é a loja", "onde e a loja",
+    "onde fica a loja", "qual a localização", "qual a localizacao",
+    "onde estão", "onde estao", "endereço"
+  ];
+  return patterns.some(p => t.includes(p));
 }
 
 function capitalize(s: string): string {
@@ -439,10 +500,11 @@ async function processStateMachine(
   message: string,
   state: BotState,
   customerName: string,
-  history: any[]
+  history: any[],
+  storeUnit?: any
 ): Promise<{ replies: Array<string | { text: string; delay_before: number }>; action: string; state: BotState; handoff_reason?: string }> {
   const replies: Array<string | { text: string; delay_before: number }> = [];
-  const store = getStoreInfo();
+  const store = getStoreInfo(storeUnit);
   const greeting = getTimeGreeting();
   const identity = store.identity;
   
@@ -539,6 +601,28 @@ async function processStateMachine(
       replies.push(store.open ? handoffMatch.message_open : handoffMatch.message_closed);
       state.stage = "handoff";
       state.handoff_reason = handoffMatch.reason;
+      state.handoff_ack_sent = true;
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+  }
+
+  // 3. Location question (onde fica, endereço, etc.)
+  if (isLocationQuestion(message) && state.stage !== "handoff") {
+    if (!state.greeted) {
+      state.greeted = true;
+      replies.push(`${greeting}! Eu sou o ${identity.intro}. 😊`);
+    }
+    if (store.address) {
+      replies.push(`📍 Estamos na ${store.address}.`);
+      return { replies, action: "reply", state };
+    } else {
+      // No address configured — handoff
+      const msg = store.open
+        ? "Vou te encaminhar para um colega que pode te passar a localização certinha. 😊"
+        : "Assim que a loja abrir, um colega vai te passar a localização certinha. 😊";
+      replies.push(msg);
+      state.stage = "handoff";
+      state.handoff_reason = "Cliente perguntou endereço (sem endereço cadastrado)";
       state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
@@ -973,7 +1057,8 @@ serve(async (req) => {
 
     // ---- MEDIA CHECK (audio/image/video/sticker/document) ----
     if (messageType !== "text") {
-      const store = getStoreInfo();
+      const storeUnit = await loadStoreUnit(channelId);
+      const store = getStoreInfo(storeUnit);
       console.log(`=== BRAIN MEDIA === type=${messageType}, store_open=${store.open}`);
       
       // Update conversation to handoff
@@ -1059,7 +1144,11 @@ serve(async (req) => {
     console.log("=== BRAIN STATE LOADED ===", JSON.stringify(state));
 
     // ---- PROCESS ----
-    const result = await processStateMachine(effectiveMessage, state, customerFirstName || "amigo", []);
+    // ---- LOAD STORE UNIT ----
+    const storeUnit = await loadStoreUnit(channelId);
+
+    // ---- PROCESS ----
+    const result = await processStateMachine(effectiveMessage, state, customerFirstName || "amigo", [], storeUnit);
 
     // ---- SAVE STATE ----
     if (supabase && conversationId) {

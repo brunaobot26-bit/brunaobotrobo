@@ -1,0 +1,1 @@
+UPDATE public.whatsapp_channels SET store_unit_id = '19f0dca3-873e-491a-b251-5fe5ade47181' WHERE id = '48a7af52-9d7d-4dfd-ace4-15b1a09a4487';

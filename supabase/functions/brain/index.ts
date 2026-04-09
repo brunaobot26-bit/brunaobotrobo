@@ -344,13 +344,33 @@ async function processWithGPT(
   // Add phase hint based on conversation state
   const isFirstMessage = history.length === 0;
   const alreadyIntroduced = history.some(h => h.role === "assistant");
-  const hasProblem = detectGroup(message) !== null || history.some(h => h.role === "user" && detectGroup(h.text || "") !== null);
+  const currentMsgGroup = detectGroup(message);
+  const currentMsgModel = detectModel(message, lookupData.models);
+  const historyHasProblem = history.some(h => h.role === "user" && detectGroup(h.text || "") !== null);
+  const historyModel = history.reduce((found: string | null, h: any) => found || (h.role === "user" ? detectModel(h.text || "", lookupData.models) : null), null);
+  
+  // Determine effective service and model from full conversation
+  const effectiveGroup = currentMsgGroup || (historyHasProblem ? history.find(h => h.role === "user" && detectGroup(h.text || ""))?.text : null);
+  const effectiveModel = currentMsgModel || historyModel;
   
   let phaseHint = "";
   if (isFirstMessage) {
-    phaseHint = `ATENÇÃO: Esta é a PRIMEIRA mensagem do cliente. Você DEVE se apresentar${!open ? " como iHelper, assistente virtual da iHelpU" : " como Emerson, especialista Apple na iHelpU"}. Use --- para separar mensagens. Siga a 1ª FASE do script.`;
-  } else if (alreadyIntroduced && !history.some(h => h.role === "user" && detectGroup(h.text || "") !== null) && hasProblem) {
-    phaseHint = "O cliente acabou de expor o problema pela primeira vez. Confirme que entendeu, diga que está no lugar certo, e se necessário pergunte o modelo.";
+    const hasServiceAndModel = currentMsgGroup && currentMsgModel;
+    phaseHint = `ATENÇÃO: Esta é a PRIMEIRA mensagem do cliente. Você DEVE se apresentar${!open ? " como iHelper, assistente virtual da iHelpU" : " como Emerson, especialista Apple na iHelpU"}. Use --- para separar mensagens. Siga a 1ª FASE.`;
+    if (hasServiceAndModel) {
+      phaseHint += ` O cliente já informou serviço e modelo. Após a apresentação (separada por ---), use get_quote e apresente o orçamento completo (Fases 2 e 3) na MESMA resposta.`;
+    } else if (currentMsgGroup) {
+      phaseHint += ` O cliente já informou o problema mas não o modelo. Após a apresentação, pergunte o modelo.`;
+    }
+  } else if (alreadyIntroduced && !historyHasProblem && currentMsgGroup) {
+    phaseHint = "O cliente acabou de expor o problema pela primeira vez. Confirme que entendeu, diga que está no lugar certo.";
+    if (currentMsgModel || historyModel) {
+      phaseHint += ` Já temos o modelo. Use get_quote e apresente o orçamento completo.`;
+    } else {
+      phaseHint += ` Pergunte o modelo do aparelho.`;
+    }
+  } else if (effectiveGroup && (currentMsgModel || historyModel) && !history.some(h => h.role === "tool")) {
+    phaseHint = `Já temos serviço e modelo. Use get_quote AGORA e apresente o orçamento (Fases 2 e 3).`;
   }
   
   if (phaseHint) {

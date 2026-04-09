@@ -236,10 +236,12 @@ Retorne APENAS JSON válido, sem markdown.`,
 async function findOrCreateConversation(contactId: string, channelId: string): Promise<{ conversationId: string; state: BotState }> {
   if (!supabase) throw new Error("No supabase client");
   
+  const SESSION_EXPIRE_MS = 30 * 60 * 1000; // 30 minutes
+  
   // Look for existing open conversation for this contact + channel
   const { data: existing } = await supabase
     .from("conversations")
-    .select("id, bot_state")
+    .select("id, bot_state, last_interaction_at")
     .eq("contact_id", contactId)
     .eq("whatsapp_channel_id", channelId)
     .eq("status", "open")
@@ -248,12 +250,22 @@ async function findOrCreateConversation(contactId: string, channelId: string): P
   
   if (existing && existing.length > 0) {
     const conv = existing[0];
-    const state = (conv.bot_state && typeof conv.bot_state === "object" && (conv.bot_state as any).stage)
-      ? { ...defaultState(), ...(conv.bot_state as any) } as BotState
-      : defaultState();
     
-    console.log("=== SESSION REUSED ===", { conversation_id: conv.id, state_stage: state.stage });
-    return { conversationId: conv.id, state };
+    // Auto-expire: if last interaction was > 30min ago, close old session and start fresh
+    const lastInteraction = conv.last_interaction_at ? new Date(conv.last_interaction_at).getTime() : 0;
+    const now = Date.now();
+    if (lastInteraction > 0 && (now - lastInteraction) > SESSION_EXPIRE_MS) {
+      console.log("=== SESSION EXPIRED ===", { conversation_id: conv.id, age_min: Math.round((now - lastInteraction) / 60000) });
+      await supabase.from("conversations").update({ status: "closed" }).eq("id", conv.id);
+      // Fall through to create new conversation below
+    } else {
+      const state = (conv.bot_state && typeof conv.bot_state === "object" && (conv.bot_state as any).stage)
+        ? { ...defaultState(), ...(conv.bot_state as any) } as BotState
+        : defaultState();
+      
+      console.log("=== SESSION REUSED ===", { conversation_id: conv.id, state_stage: state.stage });
+      return { conversationId: conv.id, state };
+    }
   }
   
   // Create new conversation

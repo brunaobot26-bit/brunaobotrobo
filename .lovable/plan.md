@@ -1,37 +1,53 @@
 
 
-## Apagar tabelas antigas que não são mais usadas
+## Problema: iPhone X não reconhecido quando usuário responde apenas "X"
 
-### Contexto
-Com a `service_pricing` funcionando, existem 6 tabelas que foram criadas anteriormente para um modelo de catálogo mais complexo e **não são usadas por nenhum código** (nem Brain, nem sync, nem frontend):
+### Causa raiz
 
-1. `catalog_item_components`
-2. `catalog_item_device_models`
-3. `catalog_item_external_refs`
-4. `catalog_items`
-5. `device_models`
-6. `pricing_rules`
+Na função `detectModel`, o modelo `"iphone x"` tem apenas o alias `["iphone x"]`. Quando o bot pergunta "Qual é o modelo?" e o usuário responde apenas "X", o texto processado é `"x"` — que não contém `"iphone x"`.
 
-Também existe uma view `resolved_pricing` referenciada nos foreign keys.
+Adicionar `"x"` como alias direto causaria falsos positivos (qualquer mensagem com a letra X matcharia).
 
-### Verificação
-- Busquei por referências a essas tabelas em `supabase/functions/` — zero resultados.
-- Busquei em `src/` — só aparecem no `types.ts` auto-gerado (que se atualiza sozinho após o DROP).
-- O Brain lê apenas `service_pricing`, `conversations`, `contacts`, `store_units`, `whatsapp_channels` e `messages`.
+### Solução
+
+Criar aliases curtos (`"x"`, `"xr"`, `"xs"`, `"xs max"`, `"se"`, etc.) e aplicá-los **somente quando o bot está no estado de aguardando modelo** (`bot_state.step === "awaiting_model"`). Nesse contexto, uma resposta curta como "X" ou "XR" claramente se refere ao modelo.
 
 ### Implementação
-Uma única migration SQL:
 
-```sql
-DROP VIEW IF EXISTS resolved_pricing CASCADE;
-DROP TABLE IF EXISTS catalog_item_components CASCADE;
-DROP TABLE IF EXISTS catalog_item_device_models CASCADE;
-DROP TABLE IF EXISTS catalog_item_external_refs CASCADE;
-DROP TABLE IF EXISTS catalog_items CASCADE;
-DROP TABLE IF EXISTS device_models CASCADE;
-DROP TABLE IF EXISTS pricing_rules CASCADE;
-```
+1. **Adicionar aliases curtos no `models`:**
+   ```
+   "iphone x": ["iphone x", "x"],
+   "iphone xr": ["iphone xr", "xr"],
+   "iphone xs": ["iphone xs", "xs"],
+   "iphone xs max": ["iphone xsmax", "xs max", "iphone xs max", "xsmax"],
+   ```
+   E para numéricos: `"11"`, `"12"`, `"13"`, `"14"`, `"15"`, `"16"`, etc.
+
+2. **Modificar `detectModel` para aceitar um parâmetro `shortMatch`:**
+   ```typescript
+   function detectModel(msg: string, shortMatch = false): string | null {
+     const t = msg.toLowerCase().replace(/[^a-z0-9\s\/]/g, "").trim();
+     const sortedModels = Object.entries(lookupData.models)
+       .sort((a, b) => b[0].length - a[0].length);
+     
+     for (const [canonical, aliases] of sortedModels) {
+       for (const alias of aliases) {
+         // Aliases curtos (1-2 chars) só matcham em shortMatch mode
+         if (alias.length <= 2 && !shortMatch) continue;
+         if (t.includes(alias)) return canonical;
+       }
+       if (t.includes(canonical)) return canonical;
+     }
+     return null;
+   }
+   ```
+
+3. **Chamar com `shortMatch = true` quando `step === "awaiting_model"`:**
+   No ponto do código onde o bot processa a resposta do modelo, passar `detectModel(userMsg, true)`.
 
 ### Risco
-Nenhum. Essas tabelas não são lidas nem escritas por nenhuma parte do sistema atual. O `types.ts` será regenerado automaticamente sem elas.
+Baixo — aliases curtos só ativam quando o bot está explicitamente pedindo o modelo, eliminando falsos positivos no fluxo normal.
+
+### Arquivos alterados
+- `supabase/functions/brain/index.ts` — aliases + lógica de shortMatch
 

@@ -358,7 +358,10 @@ async function processWithGPT(
   apiKey: string,
 ): Promise<{ replies: string[]; action: string; data: any }> {
   const nowHour = getNowHour();
+  const isFirstMessage = history.length === 0;
   const systemPrompt = buildSystemPrompt(nowHour, context);
+  const open = isStoreOpen(nowHour);
+  const greeting = getGreeting(nowHour);
 
   // Build messages from history
   const chatMessages: any[] = [];
@@ -371,6 +374,51 @@ async function processWithGPT(
   // Add current message if not already in history
   if (!chatMessages.length || chatMessages[chatMessages.length - 1].content !== message) {
     chatMessages.push({ role: "user", content: message });
+  }
+
+  // Detect if client mentioned a problem in first message
+  const norm = normalizeText(message);
+  const hasProblem = detectGroup(message) !== null;
+  
+  // Build presentation prefix for first message (Phase 1 - hardcoded)
+  let presentationPrefix: string[] = [];
+  if (isFirstMessage) {
+    const introMsg = open 
+      ? `Olá, me chamo Emerson e sou especialista Apple na iHelpU`
+      : `${greeting}! Sou o iHelper, assistente virtual da iHelpU 🧡`;
+    
+    if (hasProblem) {
+      // Client already exposed the problem
+      presentationPrefix = [
+        introMsg,
+        "Certo!",
+        "A iHelpU é a maior referência em atendimento e suporte a clientes Apple no Rio Grande do Sul, está no lugar certo!"
+      ];
+    } else {
+      // Client just greeted
+      presentationPrefix = [
+        introMsg,
+        "Como podemos te ajudar?"
+      ];
+    }
+    
+    // If client just greeted without a problem, return presentation only (no GPT needed)
+    if (!hasProblem) {
+      return { replies: presentationPrefix, action: "reply", data: {} };
+    }
+  }
+
+  // Check if client just exposed problem after initial greeting (history has greeting exchange)
+  const alreadyIntroduced = history.some(h => h.role === "assistant");
+  if (alreadyIntroduced && !isFirstMessage && hasProblem) {
+    const previouslyHadProblem = history.some(h => h.role === "user" && detectGroup(h.text || "") !== null);
+    if (!previouslyHadProblem) {
+      // First time exposing problem after greeting
+      presentationPrefix = [
+        "Ok!",
+        "A iHelpU é a maior referência em atendimento e suporte a clientes Apple no Rio Grande do Sul, está no lugar certo!"
+      ];
+    }
   }
 
   let result = await callGPT(chatMessages, systemPrompt, apiKey);

@@ -449,17 +449,21 @@ async function processStateMachine(
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
-    // Pre-service message (fixed template, NOT naturalized)
-    if (!state.pre_service_sent) {
-      replies.push(getPreServiceMessage(state.service_type));
-      state.pre_service_sent = true;
+    // CONSOLIDATED: Pre-service + Prices in ONE message to guarantee order
+    const preServiceText = !state.pre_service_sent ? getPreServiceMessage(state.service_type) : "";
+    state.pre_service_sent = true;
+    
+    const priceMessages = formatQuoteMessages(state.service_type, state.model, items);
+    const priceText = priceMessages.join("\n\n");
+    
+    // Combine pre-service + prices into a single reply
+    if (preServiceText) {
+      replies.push(`${preServiceText}\n\n${priceText}`);
+    } else {
+      replies.push(priceText);
     }
     
-    // Price (fixed, NOT naturalized)
-    const priceMessages = formatQuoteMessages(state.service_type, state.model, items);
-    replies.push(...priceMessages);
-    
-    // Closing question based on service type
+    // Closing question as separate (2nd) message
     if (state.service_type === "bateria iphone") {
       replies.push(`Você sabe me dizer a saúde da sua bateria? Pode verificar em Ajustes → Bateria → Saúde da Bateria. Se estiver abaixo de 80%, recomendamos a troca! 😊\n\nFicou alguma dúvida? Gostaria de agendar o atendimento?`);
     } else if (state.service_type === "traseira de vidro") {

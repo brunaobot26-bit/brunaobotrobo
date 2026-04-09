@@ -606,6 +606,28 @@ async function processStateMachine(
     }
   }
 
+  // 3. Location question (onde fica, endereço, etc.)
+  if (isLocationQuestion(message) && state.stage !== "handoff") {
+    if (!state.greeted) {
+      state.greeted = true;
+      replies.push(`${greeting}! Eu sou o ${identity.intro}. 😊`);
+    }
+    if (store.address) {
+      replies.push(`📍 Estamos na ${store.address}.`);
+      return { replies, action: "reply", state };
+    } else {
+      // No address configured — handoff
+      const msg = store.open
+        ? "Vou te encaminhar para um colega que pode te passar a localização certinha. 😊"
+        : "Assim que a loja abrir, um colega vai te passar a localização certinha. 😊";
+      replies.push(msg);
+      state.stage = "handoff";
+      state.handoff_reason = "Cliente perguntou endereço (sem endereço cadastrado)";
+      state.handoff_ack_sent = true;
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+  }
+
   // ---- EXTRACT INTENT ----
   const isAwaitingModel = state.stage === "awaiting_model";
   const detectedService = detectService(message);
@@ -1035,7 +1057,8 @@ serve(async (req) => {
 
     // ---- MEDIA CHECK (audio/image/video/sticker/document) ----
     if (messageType !== "text") {
-      const store = getStoreInfo();
+      const storeUnit = await loadStoreUnit(channelId);
+      const store = getStoreInfo(storeUnit);
       console.log(`=== BRAIN MEDIA === type=${messageType}, store_open=${store.open}`);
       
       // Update conversation to handoff
@@ -1121,7 +1144,11 @@ serve(async (req) => {
     console.log("=== BRAIN STATE LOADED ===", JSON.stringify(state));
 
     // ---- PROCESS ----
-    const result = await processStateMachine(effectiveMessage, state, customerFirstName || "amigo", []);
+    // ---- LOAD STORE UNIT ----
+    const storeUnit = await loadStoreUnit(channelId);
+
+    // ---- PROCESS ----
+    const result = await processStateMachine(effectiveMessage, state, customerFirstName || "amigo", [], storeUnit);
 
     // ---- SAVE STATE ----
     if (supabase && conversationId) {

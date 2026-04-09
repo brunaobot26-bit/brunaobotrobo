@@ -2,12 +2,8 @@
 
 ## Zerar histórico do número 51981404179
 
-### O que será feito
-Uma migration SQL que:
-1. Fecha todas as conversas abertas do contato com `phone_digits = '5551981404179'`
-2. Reseta o `bot_state` para `{}` nessas conversas (limpa greeted, closed_notice, etc.)
+Migration SQL para fechar todas as conversas abertas e resetar o bot_state:
 
-### SQL
 ```sql
 UPDATE conversations 
 SET status = 'closed', 
@@ -19,6 +15,5 @@ WHERE contact_id IN (
 AND status != 'closed';
 ```
 
-### Resultado
-Próxima mensagem no WhatsApp vai criar conversa nova, saudação nova, tudo do zero.
+Próxima mensagem vai iniciar conversa nova do zero.
 

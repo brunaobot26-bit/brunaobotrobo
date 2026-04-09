@@ -325,6 +325,7 @@ async function processWithGPT(
   apiKey: string,
 ): Promise<{ replies: string[]; action: string; data: any }> {
   const nowHour = getNowHour();
+  const open = isStoreOpen(nowHour);
   const systemPrompt = buildSystemPrompt(nowHour, context);
 
   // Build messages from history
@@ -338,6 +339,22 @@ async function processWithGPT(
   // Add current message if not already in history
   if (!chatMessages.length || chatMessages[chatMessages.length - 1].content !== message) {
     chatMessages.push({ role: "user", content: message });
+  }
+
+  // Add phase hint based on conversation state
+  const isFirstMessage = history.length === 0;
+  const alreadyIntroduced = history.some(h => h.role === "assistant");
+  const hasProblem = detectGroup(message) !== null || history.some(h => h.role === "user" && detectGroup(h.text || "") !== null);
+  
+  let phaseHint = "";
+  if (isFirstMessage) {
+    phaseHint = `ATENÇÃO: Esta é a PRIMEIRA mensagem do cliente. Você DEVE se apresentar${!open ? " como iHelper, assistente virtual da iHelpU" : " como Emerson, especialista Apple na iHelpU"}. Use --- para separar mensagens. Siga a 1ª FASE do script.`;
+  } else if (alreadyIntroduced && !history.some(h => h.role === "user" && detectGroup(h.text || "") !== null) && hasProblem) {
+    phaseHint = "O cliente acabou de expor o problema pela primeira vez. Confirme que entendeu, diga que está no lugar certo, e se necessário pergunte o modelo.";
+  }
+  
+  if (phaseHint) {
+    chatMessages.unshift({ role: "system", content: phaseHint });
   }
 
   let result = await callGPT(chatMessages, systemPrompt, apiKey);

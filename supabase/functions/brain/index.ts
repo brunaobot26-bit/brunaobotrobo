@@ -271,8 +271,8 @@ Se tiver qualquer objeção → handoff para humano.
 ${services}
 
 ## CONTEXTO DO CLIENTE
-${contactName ? \`Nome: \${contactName}\` : "Nome: não informado"}
-${context.last_quote_data ? \`Último orçamento: \${JSON.stringify(context.last_quote_data)}\` : "Sem orçamento anterior."}
+${contactName ? `Nome: ${contactName}` : "Nome: não informado"}
+${context.last_quote_data ? `Último orçamento: ${JSON.stringify(context.last_quote_data)}` : "Sem orçamento anterior."}
 
 ## ANTI-PATTERNS (NUNCA FAÇA ISSO)
 - NUNCA pergunte algo que o cliente já respondeu.

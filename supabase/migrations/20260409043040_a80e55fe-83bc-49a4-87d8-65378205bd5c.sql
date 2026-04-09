@@ -1,0 +1,1 @@
+UPDATE conversations SET status = 'closed', updated_at = now() WHERE id = '3309f29f-6164-47d5-91a1-01bdf298b8fb';

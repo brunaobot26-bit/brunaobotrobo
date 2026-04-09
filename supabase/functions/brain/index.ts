@@ -66,6 +66,9 @@ function getIdentity(): { name: string; intro: string } {
 
 function detectServiceGroup(text: string): string | null {
   const t = text.toLowerCase();
+  // Also detect indirect references
+  if (/\b(descarreg|carrega|carga|durando pouco|viciada|viciou|saúde|saude)\b/.test(t)) return "bateria iphone";
+  if (/\b(vidro de trás|vidro traseiro|quebr\w* (a|o) traseira|traseira quebr)\b/.test(t)) return "traseira de vidro";
   for (const [group, keywords] of Object.entries(lookupData.groups)) {
     for (const kw of keywords as string[]) {
       if (t.includes(kw)) return group;

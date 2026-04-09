@@ -1,53 +1,60 @@
 
 
-## Problema: iPhone X não reconhecido quando usuário responde apenas "X"
+## Ajustar handoff para serviços não suportados — iPhone e dispositivos não-iPhone
 
-### Causa raiz
+### Problema atual
 
-Na função `detectModel`, o modelo `"iphone x"` tem apenas o alias `["iphone x"]`. Quando o bot pergunta "Qual é o modelo?" e o usuário responde apenas "X", o texto processado é `"x"` — que não contém `"iphone x"`.
+Quando alguém menciona um serviço de iPhone que **não é** Tela, Bateria ou Traseira de Vidro (ex: câmera, placa, desbloqueio, Face ID, alto-falante), o `detectService` retorna `null` e o bot fica preso no loop "me conta o que aconteceu". Nunca faz handoff.
 
-Adicionar `"x"` como alias direto causaria falsos positivos (qualquer mensagem com a letra X matcharia).
+O mesmo acontece com iPad, MacBook, AirPods e Apple Watch — a resposta de loja fechada não diferencia nem pede detalhes.
 
 ### Solução
 
-Criar aliases curtos (`"x"`, `"xr"`, `"xs"`, `"xs max"`, `"se"`, etc.) e aplicá-los **somente quando o bot está no estado de aguardando modelo** (`bot_state.step === "awaiting_model"`). Nesse contexto, uma resposta curta como "X" ou "XR" claramente se refere ao modelo.
+Unificar o comportamento para **todos os casos de handoff** (dispositivos não-iPhone + iPhone com serviço não suportado):
 
-### Implementação
+**Loja fechada:**
+> "Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊
+> Para agilizarmos seu atendimento, me fala qual o problema do seu aparelho e o modelo."
+(Omite a segunda frase se já tem modelo + problema)
 
-1. **Adicionar aliases curtos no `models`:**
-   ```
-   "iphone x": ["iphone x", "x"],
-   "iphone xr": ["iphone xr", "xr"],
-   "iphone xs": ["iphone xs", "xs"],
-   "iphone xs max": ["iphone xsmax", "xs max", "iphone xs max", "xsmax"],
-   ```
-   E para numéricos: `"11"`, `"12"`, `"13"`, `"14"`, `"15"`, `"16"`, etc.
+**Loja aberta:**
+> "Vou encaminhar seu atendimento para um colega especialista. 😊"
 
-2. **Modificar `detectModel` para aceitar um parâmetro `shortMatch`:**
-   ```typescript
-   function detectModel(msg: string, shortMatch = false): string | null {
-     const t = msg.toLowerCase().replace(/[^a-z0-9\s\/]/g, "").trim();
-     const sortedModels = Object.entries(lookupData.models)
-       .sort((a, b) => b[0].length - a[0].length);
-     
-     for (const [canonical, aliases] of sortedModels) {
-       for (const alias of aliases) {
-         // Aliases curtos (1-2 chars) só matcham em shortMatch mode
-         if (alias.length <= 2 && !shortMatch) continue;
-         if (t.includes(alias)) return canonical;
-       }
-       if (t.includes(canonical)) return canonical;
-     }
-     return null;
-   }
-   ```
+### Implementação — `supabase/functions/brain/index.ts`
 
-3. **Chamar com `shortMatch = true` quando `step === "awaiting_model"`:**
-   No ponto do código onde o bot processa a resposta do modelo, passar `detectModel(userMsg, true)`.
+**1. Detectar serviço não suportado no iPhone**
 
-### Risco
-Baixo — aliases curtos só ativam quando o bot está explicitamente pedindo o modelo, eliminando falsos positivos no fluxo normal.
+Após a extração de intent (linha ~450), adicionar lógica: se `device_type === "iphone"` e o usuário descreveu um problema que NÃO matchou com os 3 serviços conhecidos (tela/bateria/traseira), e já temos informação suficiente de que é um serviço diferente (ex: via `extractIntent` ou palavras-chave como "câmera", "face id", "alto-falante", "placa", "botão", "carregador", "microfone"), marcar como handoff.
+
+Adicionar lista de keywords para serviços não suportados:
+```typescript
+const unsupportedKeywords = ["câmera", "camera", "face id", "faceid", "alto-falante", 
+  "alto falante", "microfone", "placa", "botão", "botao", "carregador", "conector", 
+  "speaker", "dock", "sensor", "desbloqueio", "desbloquear", "software", "atualização"];
+```
+
+**2. Bloco de handoff unificado** (linhas 483-506)
+
+Expandir para cobrir tanto dispositivos não-iPhone quanto iPhone com serviço não suportado:
+
+```text
+Se (device = ipad/macbook/watch/airpods) OU (device = iphone E serviço não suportado):
+  Se loja fechada:
+    - Cumprimentar + "Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊"
+    - Se falta modelo ou problema: "Para agilizarmos, me fala o modelo e o problema."
+  Se loja aberta:
+    - Encaminhar para especialista
+  → stage = "handoff"
+```
+
+**3. Ajuste no fluxo iPhone `awaiting_problem`**
+
+Se o usuário descreve um problema que não matcha nenhum dos 3 serviços, verificar se contém keyword de serviço não suportado. Se sim, redirecionar para o bloco de handoff em vez de ficar no loop.
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — aliases + lógica de shortMatch
+- `supabase/functions/brain/index.ts` — keywords de serviços não suportados + lógica de handoff unificada
+- Deploy da edge function `brain`
+
+### Risco
+Baixo — o fluxo dos 3 serviços suportados (tela, bateria, traseira) permanece idêntico. A mudança só captura casos que hoje ficam sem resposta útil.
 

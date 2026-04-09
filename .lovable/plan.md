@@ -1,31 +1,46 @@
 
 
-## Fix: Parcelamento com 7% + remover valor total parcelado
+## Responder "onde fica" / endereço da loja
 
-### Mudanças (4 linhas no `supabase/functions/brain/index.ts`)
+### Situação atual
+- A tabela `store_units` já tem endereços de todas as lojas (address_line_1, neighborhood, city, state)
+- O `getStoreInfo()` no brain é hardcoded — não consulta o banco
+- A loja de teste (`ihelpu-teste`, id `19f0dca3...`) não tem endereço cadastrado
+- O brain não detecta perguntas sobre localização/endereço
 
-Nas linhas 312, 316, 324 e 330, aplicar o acréscimo de 7% no cálculo da parcela. A apresentação já mostra apenas "6x de R$ XX,XX" — não precisa mudar o formato, só a fórmula.
+### Implementação
 
-**De:**
-```typescript
-const parcela = (item.final_price / 6).toFixed(2).replace(".", ",");
+**1. Atualizar endereço da loja de teste no banco**
+
+```sql
+UPDATE store_units 
+SET address_line_1 = 'Rua Teste 1234', neighborhood = 'Bairro Teste', city = 'Porto Alegre', state = 'RS'
+WHERE slug = 'ihelpu-teste';
 ```
 
-**Para:**
-```typescript
-const parcela = (item.final_price * 1.07 / 6).toFixed(2).replace(".", ",");
+**2. Carregar dados da loja via `whatsapp_channel_id`**
+
+Hoje o brain recebe `whatsapp_channel_id` do n8n. Vou usar isso para buscar a `store_unit` vinculada (via `whatsapp_channels.store_unit_id` → `store_units`), trazendo nome, endereço, horário. Isso substitui o `getStoreInfo()` hardcoded por dados reais do banco.
+
+**3. Detectar pergunta de localização no `extractIntent`**
+
+Adicionar um intent `location` no GPT que detecta frases como "onde fica", "qual o endereço", "como chego aí", "endereço da loja".
+
+**4. Responder com endereço formatado**
+
+Quando intent = `location`, responder com:
+
+```
+📍 Estamos na {address_line_1} - {neighborhood}, {city}/{state}.
 ```
 
-Aplicar nas 4 ocorrências (linhas 312, 316, 324, 330).
-
-**Exemplo:** Tela Infinity R$ 899,90 → parcela: `899.90 * 1.07 / 6 = R$ 160,48` (hoje mostra R$ 149,98).
-
-O texto de apresentação já está correto — mostra apenas "6x de R$ XX,XX", sem valor total parcelado.
+Se a loja não tiver endereço cadastrado, fazer handoff.
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — 4 linhas de cálculo de parcela
+- `store_units` — atualizar endereço da loja de teste (INSERT tool)
+- `supabase/functions/brain/index.ts` — buscar store_unit do banco, detectar intent location, responder endereço
 - Deploy da edge function `brain`
 
 ### Risco
-Zero — apenas corrige a fórmula. Valor à vista não muda.
+Baixo — adiciona um novo intent sem afetar os existentes. O fallback para handoff protege contra dados faltantes.
 

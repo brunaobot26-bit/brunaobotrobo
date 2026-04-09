@@ -543,6 +543,21 @@ serve(async (req) => {
       customer: customerName,
     }));
 
+    // FAILSAFE: reject requests without session identifiers
+    if (!contactId || !channelId) {
+      console.error("=== BRAIN REJECT === Missing contact_id or channel_id — cannot create session");
+      return new Response(JSON.stringify({
+        replies: [],
+        action: "skip",
+        state: {},
+        conversation_id: "",
+        error: "Missing contact_id or whatsapp_channel_id"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!message.trim()) {
       return new Response(JSON.stringify({ replies: [], action: "skip", state: {} }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

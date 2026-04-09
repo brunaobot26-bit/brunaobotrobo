@@ -391,8 +391,14 @@ async function processWithGPT(
     } catch { /* ignore */ }
   }
 
-  // Split reply into multiple messages at double newlines for WhatsApp readability
-  const replies = reply.split(/\n{2,}/).map((s: string) => s.trim()).filter(Boolean);
+  // Split reply using explicit "---" separator, fallback to double newlines
+  let replies: string[];
+  if (reply.includes("\n---\n") || reply.includes("\n---")) {
+    replies = reply.split(/\n?---\n?/).map((s: string) => s.trim()).filter(Boolean);
+  } else {
+    // Fallback: keep as single message to avoid order issues
+    replies = [reply.trim()];
+  }
 
   return { replies: replies.length ? replies : [reply], action, data };
 }

@@ -232,8 +232,13 @@ function detectModel(msg: string, shortMatch = false): string | null {
   
   for (const [canonical, aliases] of sortedModels) {
     for (const alias of aliases) {
-      // Short aliases (<=2 chars) only match when shortMatch is true (awaiting_model state)
-      if (alias.length <= 2 && !shortMatch) continue;
+      // Short aliases (<=2 chars): in shortMatch mode allow exact match; otherwise require context words
+      if (alias.length <= 2 && !shortMatch) {
+        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const contextPattern = new RegExp(`(meu|minha|do meu|da minha|do|da|iphone|ifone)\\s+${escaped}\\b`, "i");
+        if (contextPattern.test(t)) return canonical;
+        continue;
+      }
       if (shortMatch && alias.length <= 2) {
         // For short aliases, require exact match (not substring)
         if (t === alias || t === `iphone ${alias}`) return canonical;
@@ -264,7 +269,7 @@ function getQuote(serviceType: string, model: string): any[] | null {
 
 function getPreServiceMessage(serviceType: string): string {
   if (serviceType === "tela iphone") {
-    return `Antes de te passar as condições, gostaria de informar que neste serviço você terá um suporte pós reparo único no estado:\n\n• Garantia vitalícia na tela (Infinity) / 1 ano (Essential) — A maior do mercado e exclusividade iHelpU ✅\n\n• Reparo express, em 40 minutos! É o tempo de um cafezinho ☕️\n\n• Segurança de uma equipe certificada pela Apple para deixar teu aparelho novo, de novo! 🧡`;
+    return `Antes de te passar as condições, gostaria de informar que neste serviço você terá um suporte pós reparo único no estado:\n\n• Garantia vitalícia na tela - A maior do mercado e exclusividade iHelpU ✅\n\n• Reparo express, em 40 minutos! É o tempo de um cafezinho ☕️\n\n• Segurança de uma equipe certificada pela Apple para deixar teu aparelho novo, de novo! 🧡`;
   }
   if (serviceType === "bateria iphone") {
     return `Antes de te passar as condições, gostaria de informar que neste serviço você terá um suporte pós reparo único no estado:\n\n• Garantia de 1 ano — A maior do mercado ✅\n\n• Reparo express, em 40 minutos! É o tempo de um cafezinho ☕️\n\n• Segurança de uma equipe certificada pela Apple para deixar teu aparelho novo, de novo! 🧡`;

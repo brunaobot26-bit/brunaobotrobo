@@ -772,8 +772,12 @@ async function processStateMachine(
   // STAGE: Post-quote (after prices sent)
   if (state.stage === "post_quote") {
     const t = message.toLowerCase();
-    
-    if (/\b(agendar|agenda|marcar|horário|horario|sim|quero|vamos|bora)\b/.test(t)) {
+
+    const hasScheduleIntent = /\b(agendar|agenda|marcar|horário|horario|quero|vamos|bora)\b/.test(t);
+    const hasDiagnosticDoubt = /(\bserá\b|\bsera\b|\bcerteza\b|\bdiagnóstico\b|\bdiagnostico\b|\bpode ser\b|\bcomo saber\b|\bproblema\b|\bdefeito\b|\bcausa\b|\bsaúde\b|\bsaude\b|\d+\s*%)/.test(t);
+
+    // 1º — Agendamento: "sim" ou intent explícito, MAS sem dúvida diagnóstica
+    if ((hasScheduleIntent || /\bsim\b/.test(t)) && !hasDiagnosticDoubt) {
       if (!store.open) {
         replies.push(`Nosso horário de atendimento é ${store.schedule}. Se chegar cedinho, conseguimos dar prioridade pro seu iPhone! Vou encaminhar para o Emerson finalizar o agendamento assim que abrirmos. 😊`);
       } else {
@@ -784,17 +788,18 @@ async function processStateMachine(
       state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
-    
-    if (/\b(caro|muito|não|nao|duvida|dúvida|pensar|depois|outro)\b/.test(t)) {
+
+    // 2º — Objeção: só se NÃO tem dúvida diagnóstica
+    if (/\b(caro|muito|não|nao|pensar|depois|outro)\b/.test(t) && !hasDiagnosticDoubt) {
       replies.push(`Entendo! Vou te encaminhar para um colega que pode te ajudar melhor com isso. 😊`);
       state.stage = "handoff";
       state.handoff_reason = "Cliente com objeção ou dúvida pós-orçamento";
       state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
-    
-    // Dúvida diagnóstica / incerteza sobre o serviço
-    if (/(\?|será|sera|certeza|diagnóstico|diagnostico|pode ser|como saber|problema|defeito|causa|saúde|saude|\d+\s*%)/.test(t)) {
+
+    // 3º — Dúvida diagnóstica / incerteza sobre o serviço
+    if (hasDiagnosticDoubt || /\?/.test(t)) {
       replies.push("Entendo a dúvida! Não tenho como afirmar com certeza, vou encaminhar teu atendimento para um técnico certificado Apple que vai poder te auxiliar melhor. 😊");
       state.stage = "handoff";
       state.handoff_reason = "Dúvida diagnóstica pós-orçamento";
@@ -802,6 +807,7 @@ async function processStateMachine(
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
 
+    // 4º — Fallback
     replies.push(`Posso te ajudar com mais alguma coisa? Se quiser agendar, é só me dizer! 😊`);
     return { replies, action: "reply", state };
   }

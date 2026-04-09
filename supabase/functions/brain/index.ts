@@ -449,7 +449,11 @@ async function processStateMachine(
     const items = getQuote(state.service_type, state.model);
     
     if (!items || items.length === 0) {
-      replies.push(`Infelizmente não encontrei o preço para esse modelo/serviço no momento. Vou te encaminhar para um colega que pode te ajudar! 😊`);
+      if (store.open) {
+        replies.push(`Infelizmente não encontrei o preço para esse modelo/serviço no momento. Vou te encaminhar para um colega que pode te ajudar! 😊`);
+      } else {
+        replies.push(`Infelizmente não encontrei o preço para esse modelo/serviço no momento. Assim que abrirmos, vou te encaminhar para um colega que pode te ajudar! 😊`);
+      }
       state.stage = "handoff";
       state.handoff_reason = `Preço não encontrado: ${state.service_type} ${state.model}`;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };

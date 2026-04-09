@@ -1,88 +1,110 @@
 
 
-## Plano de Estabilização — Brain + n8n
+## Plano: Simplificar workflow n8n
 
-### Causa raiz confirmada
+### Problema atual
+O n8n está fazendo coisas que o Brain já faz internamente:
+- Buscar/criar conversa → Brain faz via `findOrCreateConversation`
+- Salvar mensagem inbound → Brain faz via `saveInboundMessage`  
+- Buscar histórico → Brain faz debounce interno com consulta ao banco
 
-Consultei o banco e confirmei: o mesmo contato (`Guilherme Dalcin`) tem **15+ conversations diferentes**, todas com `status = 'open'`. Cada mensagem do WhatsApp dispara o n8n, que cria uma nova conversa em vez de reutilizar a existente. O `bot_state` reseta para o padrão a cada mensagem — por isso o robô se apresenta de novo, esquece o serviço, e delira.
+Isso causa **mensagens inbound duplicadas** e o `conversation_id` que o n8n passa nem é usado pelo Brain (que busca pelo `contact_id` + `channel_id`).
 
-A lógica da state machine no Brain está correta. O problema é que ela nunca recebe o estado anterior.
+Além disso, o "Preparar Outbound" usa `upstream.conversation_id` que vem do n8n (às vezes null), em vez do `brain.conversation_id` que é o correto.
 
-### O que será feito (2 partes)
+### O que vai mudar no workflow
 
----
+**Nós removidos (6 nós):**
+- VERDE | HTTP - Buscar Conversa Aberta
+- VERDE | Code - Normalizar Conversa
+- VERDE | IF - Conversa Existe?
+- VERDE | Code - Preparar Criação Conversa
+- VERDE | HTTP - Criar Conversa
+- VERDE | HTTP - Salvar Mensagem Inbound
+- ROXO | HTTP - Buscar Histórico Recente
+- ROXO | Code - Normalizar Histórico
 
-**Parte 1: Brain — gerenciar conversa internamente**
+**Nós mantidos (sem alteração):**
+- AZUL | Webhook
+- AZUL | Code - Normalizar Inbound
+- VERDE | HTTP - Buscar Canal
+- VERDE | Code - Normalizar Canal
+- VERDE | HTTP - Upsert Contato
+- VERDE | Code - Normalizar Contato
+- VERMELHO | HTTP - Chamar Brain
+- ROSA | HTTP - Enviar Evolution
+- ROSA | IF - Handoff após Salvar?
+- ROSA | HTTP - Marcar Handoff
 
-O Brain vai parar de depender do `conversation_id` que o n8n passa. Em vez disso:
+**Nós alterados (3 nós):**
 
-- Recebe `contact_id` + `whatsapp_channel_id` do payload
-- Faz `SELECT` buscando conversa aberta para esse par
-- Se encontra: carrega o `bot_state` existente
-- Se não encontra: cria uma nova conversa
-- Usa esse `conversation_id` interno para tudo (debounce, state, save)
+1. **VERMELHO | Code - Montar Payload Brain** — lê direto de "Normalizar Contato" (sem depender de "Contexto Atual" que foi removido). Passa `contact_wa_id` e `evolution_instance_name` junto.
 
-Isso elimina a causa raiz de uma vez: independente do que o n8n faz, o Brain sempre encontra a conversa certa.
+2. **ROSA | Code - Preparar Outbound** — usa `brain.conversation_id` (retornado pelo Brain) em vez de `upstream.conversation_id`. Também passa `contact_wa_id` do upstream.
 
-Além disso:
-- Samsung/Motorola: `action: "handoff"` (com handoff, conforme solicitado)
-- Pré-atendimento bateria e traseira: templates fixos já estão corretos no código
-- Naturalização GPT: removida dos blocos de pré-atendimento e preço (textos fixos não devem ser reescritos)
+3. **ROSA | HTTP - Salvar Outbound** — usa `conversation_id` do item atual (que veio do brain).
 
----
-
-**Parte 2: n8n — envio espaçado + simplificação**
-
-O workflow será atualizado para:
-
-1. **Parar de criar conversa** — o n8n passa apenas `contact_id` e `channel_id` no payload do Brain. O Brain cria/encontra a conversa
-2. **Enviar replies[] com pausa** — o nó de outbound vai iterar o array `replies[]` e enviar cada mensagem via Evolution API com um `Wait` de 3s entre bolhas
-3. **Simplificar o fluxo** — remover os nós "Buscar Conversa Aberta", "IF Conversa Existe", "Criar Conversa" e "Preparar Criação Conversa" pois o Brain faz isso
-
-O payload para o Brain fica:
+**Novo fluxo simplificado:**
 ```text
-{
-  message: "texto do cliente",
-  contact_id: "uuid",
-  whatsapp_channel_id: "uuid",
-  contact_first_name: "Guilherme",
-  contact_display_name: "Guilherme Dalcin",
-  contact_wa_id: "5551999...",
-  evolution_instance_name: "robo2"
-}
+Webhook → Normalizar Inbound → Buscar Canal → Normalizar Canal 
+  → Upsert Contato → Normalizar Contato → Montar Payload Brain 
+  → Chamar Brain → Preparar Outbound → IF handoff? 
+  → Enviar Evolution → Salvar Outbound → IF Handoff após Salvar? 
+  → Marcar Handoff
 ```
-
-O Brain retorna:
-```text
-{
-  replies: ["msg1", "msg2", "msg3"],
-  action: "reply" | "handoff",
-  conversation_id: "uuid",
-  handoff_reason: "..." | null
-}
-```
-
----
 
 ### Detalhes técnicos
 
-**Arquivo:** `supabase/functions/brain/index.ts`
-- Novo handler: recebe `contact_id` + `whatsapp_channel_id`, faz lookup/create da conversa
-- Remove dependência de `context.conversation_id`
-- Remove `naturalize()` para blocos fixos (pré-atendimento, preço)
-- Corrige `other_brand` para retornar `action: "handoff"`
-- Retorna `conversation_id` no response para o n8n usar no save do outbound
+**Montar Payload Brain (novo código):**
+```javascript
+const ct = $node['VERDE | Code - Normalizar Contato'].json;
+const inb = $node['AZUL | Code - Normalizar Inbound'].json;
+return [{ json: {
+  contact_id: ct.contact_id,
+  channel_id: ct.channel_id,
+  evolution_instance_name: ct.evolution_instance_name,
+  contact_wa_id: ct.contact_wa_id,
+  payload: {
+    message: ct.message_text,
+    contact_id: ct.contact_id,
+    whatsapp_channel_id: ct.channel_id,
+    contact_first_name: ct.contact_first_name || null,
+    contact_display_name: ct.contact_display_name || null,
+    external_message_id: ct.message_id || null,
+    message_timestamp: ct.message_timestamp || null
+  }
+}}];
+```
 
-**Workflow n8n:** `dsRhwCNmK5L83miU`
-- Simplifica: webhook → normalizar → buscar canal → upsert contato → montar payload → chamar brain → loop replies com Wait 3s → enviar → salvar outbound → check handoff
-- Remove 4 nós de gerenciamento de conversa
-- Adiciona loop com pausa entre mensagens
+**Preparar Outbound (novo código):**
+```javascript
+const brain = $json;
+const upstream = $node['VERMELHO | Code - Montar Payload Brain'].json;
+const replies = Array.isArray(brain.replies)
+  ? brain.replies.filter(text => typeof text === 'string' && text.trim())
+  : (brain.reply ? [brain.reply] : []);
+const action = brain.action || 'reply';
+if (replies.length === 0 && action === 'skip') {
+  return [];
+}
+return replies.map(text => ({
+  json: {
+    conversation_id: brain.conversation_id || null,
+    contact_id: upstream.contact_id,
+    evolution_instance_name: upstream.evolution_instance_name,
+    contact_wa_id: upstream.contact_wa_id,
+    action,
+    text
+  }
+}));
+```
+
+### Impacto
+- Elimina mensagens inbound duplicadas no banco
+- Garante que o `conversation_id` usado no outbound é o correto (vindo do Brain)
+- Simplifica o workflow de ~22 nós para ~14 nós
+- Nenhuma alteração no Brain (já está pronto)
 
 ### Validação
-
-Antes de pedir teste, vou:
-1. Deploy do Brain atualizado
-2. Testar via `curl` cenários: saudação, tela, bateria, traseira, iPad, Samsung, rajada de mensagens
-3. Verificar que o mesmo `contact_id` sempre retorna o mesmo `conversation_id`
-4. Verificar que `bot_state` persiste entre chamadas
+Após o deploy, vou testar via curl e verificar que o fluxo completo funciona ponta a ponta.
 

@@ -521,6 +521,7 @@ async function processStateMachine(
       replies.push(store.open ? handoffMatch.message_open : handoffMatch.message_closed);
       state.stage = "handoff";
       state.handoff_reason = handoffMatch.reason;
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
   }
@@ -585,6 +586,7 @@ async function processStateMachine(
     }
     state.greeted = true;
     state.stage = "non_apple_rejected";
+    state.handoff_ack_sent = true;
     return { replies, action: "handoff", state, handoff_reason: "Aparelho não-Apple" };
   }
   
@@ -631,6 +633,7 @@ async function processStateMachine(
     state.handoff_reason = isIphoneUnsupported
       ? `Serviço iPhone não cotado automaticamente — encaminhar para especialista`
       : `Atendimento ${deviceLabel} — encaminhar para especialista`;
+    state.handoff_ack_sent = true;
     return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
   }
   
@@ -683,6 +686,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = "Serviço iPhone não cotado automaticamente — encaminhar para especialista";
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -725,6 +729,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = `Preço não encontrado: ${state.service_type} ${state.model}`;
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -770,6 +775,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = "Cliente quer agendar atendimento";
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -777,6 +783,7 @@ async function processStateMachine(
       replies.push(`Entendo! Vou te encaminhar para um colega que pode te ajudar melhor com isso. 😊`);
       state.stage = "handoff";
       state.handoff_reason = "Cliente com objeção ou dúvida pós-orçamento";
+      state.handoff_ack_sent = true;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     

@@ -299,6 +299,12 @@ async function processStateMachine(
   const greeting = getTimeGreeting();
   const identity = store.identity;
   
+  // ---- SMART RESET: if greeting arrives during terminal stages, restart conversation ----
+  if (isJustGreeting(message) && ["post_quote", "handoff", "non_apple_rejected"].includes(state.stage)) {
+    console.log("=== BRAIN SMART RESET ===", { old_stage: state.stage, message });
+    state = defaultState();
+  }
+  
   // Update identity in state
   state.identity = identity.name;
   

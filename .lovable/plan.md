@@ -1,60 +1,39 @@
 
 
-## Ajustar handoff para serviços não suportados — iPhone e dispositivos não-iPhone
+## Dois ajustes no Brain
 
-### Problema atual
+### Ajuste 1: Reconhecer "X" como iPhone X em contexto natural
 
-Quando alguém menciona um serviço de iPhone que **não é** Tela, Bateria ou Traseira de Vidro (ex: câmera, placa, desbloqueio, Face ID, alto-falante), o `detectService` retorna `null` e o bot fica preso no loop "me conta o que aconteceu". Nunca faz handoff.
+**Problema:** Quando o usuário diz "tela do meu x quebrada", o `detectModel` roda com `shortMatch=false` e ignora o alias "x" (<=2 chars). O bot pede o modelo novamente.
 
-O mesmo acontece com iPad, MacBook, AirPods e Apple Watch — a resposta de loja fechada não diferencia nem pede detalhes.
+**Solução:** Na função `detectModel`, quando `shortMatch=false`, permitir aliases curtos se vierem precedidos de contexto claro de modelo — padrões como `meu x`, `iphone x`, `do x`. Implementar verificação com regex para aliases curtos em contexto:
 
-### Solução
-
-Unificar o comportamento para **todos os casos de handoff** (dispositivos não-iPhone + iPhone com serviço não suportado):
-
-**Loja fechada:**
-> "Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊
-> Para agilizarmos seu atendimento, me fala qual o problema do seu aparelho e o modelo."
-(Omite a segunda frase se já tem modelo + problema)
-
-**Loja aberta:**
-> "Vou encaminhar seu atendimento para um colega especialista. 😊"
-
-### Implementação — `supabase/functions/brain/index.ts`
-
-**1. Detectar serviço não suportado no iPhone**
-
-Após a extração de intent (linha ~450), adicionar lógica: se `device_type === "iphone"` e o usuário descreveu um problema que NÃO matchou com os 3 serviços conhecidos (tela/bateria/traseira), e já temos informação suficiente de que é um serviço diferente (ex: via `extractIntent` ou palavras-chave como "câmera", "face id", "alto-falante", "placa", "botão", "carregador", "microfone"), marcar como handoff.
-
-Adicionar lista de keywords para serviços não suportados:
 ```typescript
-const unsupportedKeywords = ["câmera", "camera", "face id", "faceid", "alto-falante", 
-  "alto falante", "microfone", "placa", "botão", "botao", "carregador", "conector", 
-  "speaker", "dock", "sensor", "desbloqueio", "desbloquear", "software", "atualização"];
+// Para aliases curtos sem shortMatch, verificar se há contexto de modelo
+if (alias.length <= 2 && !shortMatch) {
+  const contextPattern = new RegExp(`(meu|minha|do meu|da minha|iphone)\\s+${alias}\\b`, "i");
+  if (contextPattern.test(t)) return canonical;
+  continue;
+}
 ```
 
-**2. Bloco de handoff unificado** (linhas 483-506)
+Isso reconhece "tela do meu x", "meu xr", "iphone 8" sem falso positivo de um "x" solto.
 
-Expandir para cobrir tanto dispositivos não-iPhone quanto iPhone com serviço não suportado:
+### Ajuste 2: Texto de garantia da tela
 
-```text
-Se (device = ipad/macbook/watch/airpods) OU (device = iphone E serviço não suportado):
-  Se loja fechada:
-    - Cumprimentar + "Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊"
-    - Se falta modelo ou problema: "Para agilizarmos, me fala o modelo e o problema."
-  Se loja aberta:
-    - Encaminhar para especialista
-  → stage = "handoff"
+**Problema:** O texto atual mostra "Garantia vitalícia na tela (Infinity) / 1 ano (Essential)".
+
+**Correção:** Linha 267, alterar para:
+```
+• Garantia vitalícia na tela - A maior do mercado e exclusividade iHelpU ✅
 ```
 
-**3. Ajuste no fluxo iPhone `awaiting_problem`**
-
-Se o usuário descreve um problema que não matcha nenhum dos 3 serviços, verificar se contém keyword de serviço não suportado. Se sim, redirecionar para o bloco de handoff em vez de ficar no loop.
+Remove a menção "(Infinity) / 1 ano (Essential)".
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — keywords de serviços não suportados + lógica de handoff unificada
+- `supabase/functions/brain/index.ts` — regex de contexto no `detectModel` + texto de garantia
 - Deploy da edge function `brain`
 
 ### Risco
-Baixo — o fluxo dos 3 serviços suportados (tela, bateria, traseira) permanece idêntico. A mudança só captura casos que hoje ficam sem resposta útil.
+Baixo — a regex exige palavras de contexto antes do alias curto, eliminando falsos positivos.
 

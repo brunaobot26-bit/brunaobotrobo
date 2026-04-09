@@ -783,8 +783,17 @@ async function processStateMachine(
     return { replies, action: "reply", state };
   }
   
-  // STAGE: Handoff already done - don't reply
+  // STAGE: Handoff already done - send ack once, then skip
   if (state.stage === "handoff" || state.stage === "non_apple_rejected") {
+    if (!state.handoff_ack_sent) {
+      state.handoff_ack_sent = true;
+      if (store.open) {
+        replies.push("Já estou te encaminhando para um colega, em breve ele vai te chamar. 😊");
+      } else {
+        replies.push("Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊");
+      }
+      return { replies, action: "reply", state };
+    }
     return { replies: [], action: "skip", state };
   }
   

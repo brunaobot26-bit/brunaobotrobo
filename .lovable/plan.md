@@ -1,57 +1,46 @@
 
 
-## Plano: Executar testes end-to-end do Brain via curl
+## Dois ajustes no post_quote
 
-Vou chamar a edge function `brain` diretamente com mensagens simuladas para validar todos os cenários que construímos. Para cada teste, usarei um `contact_id` fictício diferente para garantir sessão limpa.
+### Problema 1: "Sim, quebrou a traseira também" → agendamento em vez de handoff
 
-### Cenários a testar
+No `post_quote`, o bloco de agendamento captura `\bsim\b` e não detecta dúvida diagnóstica (`hasDiagnosticDoubt`). Mas o cliente está mencionando **outro serviço** — isso deveria ser handoff por múltiplos serviços.
 
-**Grupo 1 — Detecção de modelo**
-1. "cair" NÃO deve detectar iPhone Air (fix word boundary)
-2. "tela do meu x quebrada" → deve detectar iPhone X (contexto + alias curto)
-3. "iPhone 14 pro max" → detecção normal
+**Solução:** No início do bloco `post_quote` (antes dos 4 caminhos), rodar `detectMultipleServices` combinando a mensagem atual com o `service_type` já detectado no state. Se resultar em 2+ serviços, fazer handoff de múltiplos.
 
-**Grupo 2 — Fluxo iPhone com serviço suportado**
-4. "trocar a tela do meu iPhone 13" → greeting + pre-service + preço (1 chamada)
-5. "quero trocar bateria" → pede modelo → enviar "15 pro" → preço
+```typescript
+// No início do post_quote, antes do path 1:
+const currentMsg = message.toLowerCase();
+const additionalServices = detectMultipleServices(currentMsg);
+const alreadyHasService = state.service_type || "";
+// Check if new message mentions a DIFFERENT service than what was quoted
+const allServices = new Set<string>();
+if (/tela/.test(alreadyHasService)) allServices.add("tela");
+if (/bateria/.test(alreadyHasService)) allServices.add("bateria");
+if (/traseira/.test(alreadyHasService)) allServices.add("traseira");
+additionalServices.forEach(s => allServices.add(s));
 
-**Grupo 3 — Dispositivos não-iPhone**
-6. "trocar bateria do meu MacBook Pro 2020" → handoff direto
-7. "tela do meu iPad quebrou" → handoff direto
+if (allServices.size >= 2) {
+  // handoff múltiplos serviços (mesma mensagem do bloco existente)
+  ...
+}
+```
 
-**Grupo 4 — Serviço não suportado iPhone**
-8. "meu iPhone não liga" → handoff (unsupported keyword)
-9. "problema na câmera do meu iPhone 15" → handoff
+### Problema 2: "Vou te encaminhar para o Emerson" quando JÁ é o Emerson
 
-**Grupo 5 — Handoff keywords**
-10. "quero comprar um iPhone" → handoff compra/venda
-11. "quero falar com uma pessoa" → handoff humano
-12. "quero um desconto" → handoff negociação
+Quando a loja está aberta, o bot É o Emerson. Dizer "vou encaminhar para o Emerson" não faz sentido.
 
-**Grupo 6 — Post-quote (agendamento vs diagnóstico)**
-13. Após orçamento bateria: "Sim" → agendamento
-14. Após orçamento bateria: "Sim, é a bateria mesmo o problema?" → diagnóstico
-15. Após orçamento bateria: "Sim, tem horário às 14h?" → agendamento
+**Solução:** Mudar a mensagem de agendamento para:
+- **Loja aberta (Emerson):** `"Ótimo! Vamos seguir com seu agendamento então. 😊"`
+- **Loja fechada (iHelper):** manter `"...Vou encaminhar para o Emerson finalizar o agendamento assim que abrirmos. 😊"`
 
-**Grupo 7 — Múltiplos serviços**
-16. "preciso trocar tela e bateria" → handoff múltiplos
-
-**Grupo 8 — Correção de device**
-17. "trocar bateria" → bot assume iPhone → "é um MacBook" → handoff MacBook
-
-**Grupo 9 — Handoff ack**
-18. Após handoff, enviar outra mensagem → deve receber ack 1x, depois silêncio
-
-**Grupo 10 — Garantia vitalícia (texto correto)**
-19. Verificar que o pre-service de tela diz "Garantia vitalícia na tela - A maior do mercado e exclusividade iHelpU ✅" (sem menção Infinity/Essential)
-
-### Execução
-
-Cada teste será uma chamada `curl_edge_functions` com contact_id único (UUID gerado). Vou analisar os `replies` e `action` retornados para validar.
+Aplicar a mesma correção em todas as mensagens de handoff para agendamento que mencionam "encaminhar para o Emerson" quando já é o Emerson atendendo.
 
 ### Arquivos alterados
-Nenhum — são apenas testes de leitura.
+- `supabase/functions/brain/index.ts` — detecção de novo serviço no post_quote + correção de mensagem de agendamento
+- Deploy da edge function `brain`
+- Reset conversa de teste
 
 ### Risco
-Zero — chamadas read-only à edge function com dados fictícios.
+Baixo — adiciona uma checagem antes dos paths existentes. Fluxo de serviço único permanece intacto.
 

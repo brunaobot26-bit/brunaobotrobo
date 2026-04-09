@@ -1,77 +1,43 @@
 
 
-## Diagnóstico Confirmado
+## Plano: Separar replies com risco zero de inversão
 
-### Problema 1: Sessão anterior não foi limpa
-Os logs mostram claramente:
-- Às 03:45:10 → primeira mensagem "boa noite" com IDs válidos → sessão CRIADA, saudação ENVIADA com horário de funcionamento
-- Às 03:48:16 → segundo teste "Boa noite!" + "Tudo bem?" → sessão REUTILIZADA (conversation `0f342a42...`) → `greeted: true`, `closed_notice_sent: true` já estavam marcados
-- Resultado: o Brain pulou a saudação porque já tinha saudado no teste anterior (3 minutos antes)
+### Opção recomendada (risco ZERO)
 
-**Não perdeu contexto — reutilizou a sessão do teste anterior.**
+Manter **Reply 1 (pre-service) + Reply 2 (preços) como 2 mensagens separadas**, mas o Brain adiciona um campo `delay_before` em cada reply para o n8n respeitar:
 
-### Problema 2: Ordem das mensagens invertida no WhatsApp
-O Brain retornou 3 replies na ordem correta:
-1. Pre-service (garantia, reparo express...)
-2. Preços (Infinity/Essential)
-3. Pergunta de fechamento
-
-Mas no WhatsApp chegou: Preços → Pergunta → Pre-service.
-
-**Causa**: O n8n "Preparar Outbound" cria 3 items separados e o n8n envia todos simultaneamente (sem delay entre eles). A Evolution API processa em paralelo e entrega fora de ordem.
-
----
-
-## Plano de Correção (2 partes)
-
-### Parte 1: Brain (eu faço e deploy)
-
-**A. Consolidar replies em menos mensagens**
-Em vez de retornar 3 replies separados que o n8n pode embaralhar, o Brain vai combinar:
-- Pre-service + Preços = 1 mensagem
-- Pergunta de fechamento = 1 mensagem
-
-Isso garante ordem independente do n8n.
-
-**B. Fechar sessões antigas automaticamente**
-Antes de buscar conversa aberta, o Brain vai verificar se a última interação foi há mais de 30 minutos. Se sim, fecha a conversa antiga e cria uma nova. Isso evita que testes anteriores contaminem novos.
-
-**C. Manter o failsafe de IDs vazios** (já está funcionando, como vimos no log das 03:45:04)
-
-### Parte 2: n8n (JSON completo para importar)
-
-Vou gerar o JSON completo do workflow com estas melhorias:
-
-1. **Adicionar nó "Wait 2s" entre Enviar Evolution e Salvar Outbound** — garante que as mensagens cheguem na ordem certa (uma de cada vez)
-2. **Usar "Split In Batches" (batch size 1) antes de Enviar** — força processamento sequencial dos replies
-3. **Manter todo o resto igual** — Webhook, Normalizar Inbound, Buscar Canal, Normalizar Canal, Upsert Contato, Normalizar Contato, Montar Payload, Chamar Brain
-
-Fluxo final:
-```text
-Webhook → Normalizar Inbound → Buscar Canal → Normalizar Canal 
-→ Upsert Contato → Normalizar Contato → Montar Payload Brain 
-→ Chamar Brain → Preparar Outbound → Split In Batches (1) 
-→ IF Action skip? → Enviar Evolution → Wait 2s → Salvar Outbound 
-→ IF Handoff? → Marcar Handoff
+```json
+{
+  "replies": [
+    { "text": "Antes de te passar as condições...", "delay_before": 0 },
+    { "text": "Valores para troca de tela...", "delay_before": 2 },
+    { "text": "Ficou alguma dúvida?...", "delay_before": 3 }
+  ]
+}
 ```
 
-### Detalhes técnicos
+**Como funciona no n8n:**
+O loop `Split In Batches (batch size 1)` já processa um reply por vez. Adicionamos um nó **Wait** ANTES do envio (não depois), que lê `delay_before` do item atual. Se for 0, envia imediato. Se for 2 ou 3, espera antes de enviar.
 
-**Brain — Consolidação de replies (ready_quote stage):**
-- Pre-service + preços numa só mensagem
-- Pergunta de fechamento separada
-- Total: 2 mensagens em vez de 3
+Isso garante:
+- Reply 1 envia imediatamente
+- Reply 2 só envia 2s DEPOIS do Reply 1 já ter sido entregue
+- Reply 3 só envia 3s DEPOIS do Reply 2
 
-**Brain — Auto-expire de sessão:**
-- Se `last_interaction_at` > 30 min atrás, fechar conversa antiga e criar nova
-- Garante que cada teste (e cada cliente real) comece limpo
+**Risco de inversão = zero**, porque cada mensagem só é enviada após a anterior já ter sido processada pela Evolution API + tempo de folga.
 
-**n8n — Sequential send:**
-- Split In Batches com batch size 1
-- Wait de 2 segundos entre cada envio
-- Garante ordem de entrega no WhatsApp
+### Alterações
+
+**1. Brain (`supabase/functions/brain/index.ts`)**
+- No stage `ready_quote`, retornar 3 replies separados em vez de 2
+- Adicionar campo `delay_before` em cada reply (0, 2, 3 respectivamente)
+
+**2. n8n (vou te dar instruções exatas)**
+- No nó "Preparar Outbound", incluir o campo `delay_before` no output
+- Mover o nó Wait para ANTES do "Enviar Evolution" e configurar para ler `{{ $json.delay_before }}` segundos
+- Fluxo: Split In Batches → Wait (delay_before) → Enviar Evolution → Salvar Outbound → próximo batch
 
 ### Entregáveis
-1. Deploy do Brain corrigido (eu faço)
-2. JSON completo do workflow n8n para tu importar (eu gero e entrego aqui)
+1. Deploy do Brain com 3 replies + delay_before
+2. Instruções passo a passo para ajustar o Wait no n8n
 

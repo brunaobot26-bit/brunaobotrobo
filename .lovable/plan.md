@@ -1,53 +1,62 @@
 
 
-## Ajuste no post_quote: detectar dúvida diagnóstica e fazer handoff
+## Ajuste: priorizar corretamente agendamento vs dúvida diagnóstica no post_quote
 
-### Problema
+### Problema com o plano anterior
 
-No `post_quote` (linha 773-798), existem 3 caminhos:
-1. Cliente quer agendar → handoff para agendamento ✅
-2. Cliente tem objeção (caro, não, pensar) → handoff para objeção ✅  
-3. **Qualquer outra coisa** → "Posso te ajudar com mais alguma coisa?" ← **aqui está o problema**
+Mover dúvida diagnóstica para **antes** do agendamento quebraria casos como:
+- "Sim, vocês tem horário para 14:00hrs de Segunda?" — contém `?` → iria para diagnóstico em vez de agendamento
 
-Quando o cliente diz "A bateria está com 95%. Será que é ela?", não bate em nenhum dos dois patterns, e cai no fallback genérico que ignora a pergunta.
+Manter diagnóstico **depois** do agendamento (como está hoje) quebra:
+- "Sim, é a bateria mesmo o problema?" — contém `sim` → vai para agendamento em vez de diagnóstico
 
-### Solução
+### Solução: checagem combinada
 
-Adicionar um 3º pattern **antes** do fallback genérico: detectar dúvida diagnóstica / incerteza. Se o cliente faz uma pergunta sobre o problema (contém `?` ou keywords de diagnóstico), fazer handoff para um técnico.
+A ordem fica: **agendamento → objeção → diagnóstico → fallback**, mas a regex de agendamento ganha uma condição extra: só dispara se a mensagem **não contiver keywords diagnósticas** (exceto `?` sozinho quando acompanhado de keywords de agendamento).
 
-**Keywords de diagnóstico/incerteza:**
-`["será", "sera", "certeza", "diagnóstico", "diagnostico", "problema", "defeito", "será que", "pode ser", "como saber", "saúde", "saude", "%"]`
-
-**Mensagem de handoff:**
-"Com a saúde em 95%, o problema pode ter outra causa. Vou te encaminhar para um técnico certificado Apple que vai te orientar com mais precisão. 😊"
-
-Mas como não queremos uma mensagem tão específica (pode não ser sempre sobre saúde de bateria), usar uma mais genérica:
-
-"Entendo a dúvida! Não tenho como afirmar com certeza, vou encaminhar teu atendimento para um técnico certificado Apple que vai poder te auxiliar melhor. 😊"
-
-### Mudança concreta
-
-**`supabase/functions/brain/index.ts` — bloco `post_quote` (linhas 788-797):**
-
-Inserir entre o check de objeção e o fallback genérico:
+Lógica concreta:
 
 ```typescript
-// Dúvida diagnóstica / incerteza sobre o serviço
-if (/(\?|será|sera|certeza|diagnóstico|diagnostico|pode ser|como saber|problema|defeito|causa|saúde|saude|\d+\s*%)/.test(t)) {
-  replies.push("Entendo a dúvida! Não tenho como afirmar com certeza, vou encaminhar teu atendimento para um técnico certificado Apple que vai poder te auxiliar melhor. 😊");
-  state.stage = "handoff";
-  state.handoff_reason = "Dúvida diagnóstica pós-orçamento";
-  state.handoff_ack_sent = true;
-  return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+if (state.stage === "post_quote") {
+  const t = message.toLowerCase();
+
+  const hasScheduleIntent = /\b(agendar|agenda|marcar|horário|horario|quero|vamos|bora)\b/.test(t);
+  const hasDiagnosticDoubt = /(\bserá\b|\bsera\b|\bcerteza\b|\bdiagnóstico\b|\bdiagnostico\b|\bpode ser\b|\bcomo saber\b|\bproblema\b|\bdefeito\b|\bcausa\b|\bsaúde\b|\bsaude\b|\d+\s*%)/.test(t);
+
+  // "sim" sozinho ou com intent de agendamento → agendamento
+  // "sim" + dúvida diagnóstica (sem intent de agendamento) → diagnóstico
+  if ((hasScheduleIntent || /\b(sim)\b/.test(t)) && !hasDiagnosticDoubt) {
+    // → handoff agendamento (código atual)
+  }
+
+  if (/\b(caro|muito|não|nao|pensar|depois|outro)\b/.test(t) && !hasDiagnosticDoubt) {
+    // → handoff objeção (código atual)
+  }
+
+  if (hasDiagnosticDoubt || /\?/.test(t)) {
+    // → handoff diagnóstico
+  }
+
+  // fallback
 }
 ```
 
-### O que NÃO muda
-- Fluxo de agendamento — intacto
-- Fluxo de objeção — intacto
-- Nenhuma tabela, nenhuma coluna, nenhuma migration
-- Apenas 7 linhas adicionadas num bloco já existente
+**Exemplos de comportamento:**
+
+| Mensagem | Schedule? | Diagnostic? | Resultado |
+|---|---|---|---|
+| "Sim" | sim+true | false | ✅ Agendamento |
+| "Sim, tem horário às 14h de segunda?" | horário=true | false | ✅ Agendamento |
+| "Sim, é a bateria mesmo o problema?" | sim apenas | problema=true | ✅ Diagnóstico |
+| "A bateria está com 95%. Será que é ela?" | false | será+95%=true | ✅ Diagnóstico |
+| "Tem certeza que é bateria?" | false | certeza=true | ✅ Diagnóstico |
+| "Não, tá caro" | false (objeção) | false | ✅ Objeção |
+
+### Mudança concreta
+- **`supabase/functions/brain/index.ts`** — reescrever bloco `post_quote` (linhas 773-807) com lógica combinada
+- Deploy da edge function `brain`
+- Reset conversa de teste
 
 ### Risco
-Mínimo — a regex é restrita ao stage `post_quote` (orçamento já enviado). Não afeta nenhum outro ponto do fluxo.
+Mínimo — mesmos 4 caminhos, apenas com detecção mais inteligente de qual usar.
 

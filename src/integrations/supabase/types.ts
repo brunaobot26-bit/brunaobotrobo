@@ -748,6 +748,60 @@ export type Database = {
           },
         ]
       }
+      service_pricing: {
+        Row: {
+          active: boolean
+          created_at: string | null
+          erp_product_id: string | null
+          final_price: number
+          id: string
+          labor_price: number
+          model: string | null
+          model_display: string | null
+          service_group: string
+          service_name: string
+          service_price: number
+          service_sku: string | null
+          synced_at: string | null
+          updated_at: string | null
+          variant: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string | null
+          erp_product_id?: string | null
+          final_price: number
+          id?: string
+          labor_price?: number
+          model?: string | null
+          model_display?: string | null
+          service_group: string
+          service_name: string
+          service_price: number
+          service_sku?: string | null
+          synced_at?: string | null
+          updated_at?: string | null
+          variant?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string | null
+          erp_product_id?: string | null
+          final_price?: number
+          id?: string
+          labor_price?: number
+          model?: string | null
+          model_display?: string | null
+          service_group?: string
+          service_name?: string
+          service_price?: number
+          service_sku?: string | null
+          synced_at?: string | null
+          updated_at?: string | null
+          variant?: string | null
+        }
+        Relationships: []
+      }
       store_units: {
         Row: {
           active: boolean

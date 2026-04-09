@@ -500,10 +500,11 @@ async function processStateMachine(
   message: string,
   state: BotState,
   customerName: string,
-  history: any[]
+  history: any[],
+  storeUnit?: any
 ): Promise<{ replies: Array<string | { text: string; delay_before: number }>; action: string; state: BotState; handoff_reason?: string }> {
   const replies: Array<string | { text: string; delay_before: number }> = [];
-  const store = getStoreInfo();
+  const store = getStoreInfo(storeUnit);
   const greeting = getTimeGreeting();
   const identity = store.identity;
   

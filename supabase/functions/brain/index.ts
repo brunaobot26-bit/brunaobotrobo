@@ -152,6 +152,7 @@ interface BotState {
   handoff_reason: string | null;
   closed_notice_sent: boolean;
   last_processed_at: string | null;
+  handoff_ack_sent: boolean;
 }
 
 function defaultState(): BotState {
@@ -167,6 +168,7 @@ function defaultState(): BotState {
     handoff_reason: null,
     closed_notice_sent: false,
     last_processed_at: null,
+    handoff_ack_sent: false,
   };
 }
 

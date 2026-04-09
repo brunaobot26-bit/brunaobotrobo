@@ -1,44 +1,31 @@
 
 
-## Resposta sobre ERP + Fix do lookup combo
+## Fix: Parcelamento com 7% + remover valor total parcelado
 
-### A padronização no banco afeta o ERP?
+### Mudanças (4 linhas no `supabase/functions/brain/index.ts`)
 
-**Sim, seria sobrescrita.** O sync ERP (`sync-erp-pricing`) gera o campo `model` automaticamente a partir do nome do produto no Lightspeed (linha 37-62). Se eu padronizar `iphone 12/12 pro` → `iphone 12 / 12 pro` no banco, na próxima sync (6h da manhã) o ERP vai recriar a linha com o nome original. Ou seja, mexer no banco não resolve — o fix tem que ser no código do Brain.
+Nas linhas 312, 316, 324 e 330, aplicar o acréscimo de 7% no cálculo da parcela. A apresentação já mostra apenas "6x de R$ XX,XX" — não precisa mudar o formato, só a fórmula.
 
-### Solução: fallback no `getQuote` (sem tocar no banco)
-
-Alterar a função `getQuote` no `supabase/functions/brain/index.ts` para:
-
-1. **Tentar match exato** (como hoje) — resolve 95% dos modelos
-2. **Se falhar, normalizar e procurar** — remove espaços ao redor de `/` e busca em todas as keys normalizadas
-
+**De:**
 ```typescript
-function getQuote(serviceType, model) {
-  const key = `${serviceType}::${model}`;
-  // 1. Match exato
-  if (lookupData.items_by_group_model[key]) return ...;
-  
-  // 2. Fallback: procurar modelo dentro de keys combo
-  const norm = (s) => s.replace(/\s*\/\s*/g, '/');
-  for (const [k, v] of Object.entries(lookupData.items_by_group_model)) {
-    if (k.startsWith(serviceType + "::") && norm(k).includes(norm(model))) {
-      return v;
-    }
-  }
-  return null;
-}
+const parcela = (item.final_price / 6).toFixed(2).replace(".", ",");
 ```
 
-Isso resolve:
-- Cliente diz "iPhone 12 Pro" → bot detecta `iphone 12 pro` → match exato falha → fallback encontra `iphone 12 / 12 pro` e `iphone 12/12 pro` → retorna Infinity (R$ 899,90) **e** Essential (R$ 499,90)
-- Cliente diz "iPhone 12" → match exato falha para tela (não existe `tela iphone::iphone 12` solo) → fallback encontra os combos → retorna ambas variantes
+**Para:**
+```typescript
+const parcela = (item.final_price * 1.07 / 6).toFixed(2).replace(".", ",");
+```
+
+Aplicar nas 4 ocorrências (linhas 312, 316, 324, 330).
+
+**Exemplo:** Tela Infinity R$ 899,90 → parcela: `899.90 * 1.07 / 6 = R$ 160,48` (hoje mostra R$ 149,98).
+
+O texto de apresentação já está correto — mostra apenas "6x de R$ XX,XX", sem valor total parcelado.
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — expandir `getQuote` com fallback normalizado
+- `supabase/functions/brain/index.ts` — 4 linhas de cálculo de parcela
 - Deploy da edge function `brain`
-- Reset conversa de teste
 
 ### Risco
-Zero para modelos com row própria (match exato continua prioritário). Modelos combo passam a funcionar sem mexer no banco nem no sync ERP.
+Zero — apenas corrige a fórmula. Valor à vista não muda.
 

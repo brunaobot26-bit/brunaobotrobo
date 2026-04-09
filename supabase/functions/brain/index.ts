@@ -236,10 +236,12 @@ Retorne APENAS JSON válido, sem markdown.`,
 async function findOrCreateConversation(contactId: string, channelId: string): Promise<{ conversationId: string; state: BotState }> {
   if (!supabase) throw new Error("No supabase client");
   
+  const SESSION_EXPIRE_MS = 30 * 60 * 1000; // 30 minutes
+  
   // Look for existing open conversation for this contact + channel
   const { data: existing } = await supabase
     .from("conversations")
-    .select("id, bot_state")
+    .select("id, bot_state, last_interaction_at")
     .eq("contact_id", contactId)
     .eq("whatsapp_channel_id", channelId)
     .eq("status", "open")
@@ -248,12 +250,22 @@ async function findOrCreateConversation(contactId: string, channelId: string): P
   
   if (existing && existing.length > 0) {
     const conv = existing[0];
-    const state = (conv.bot_state && typeof conv.bot_state === "object" && (conv.bot_state as any).stage)
-      ? { ...defaultState(), ...(conv.bot_state as any) } as BotState
-      : defaultState();
     
-    console.log("=== SESSION REUSED ===", { conversation_id: conv.id, state_stage: state.stage });
-    return { conversationId: conv.id, state };
+    // Auto-expire: if last interaction was > 30min ago, close old session and start fresh
+    const lastInteraction = conv.last_interaction_at ? new Date(conv.last_interaction_at).getTime() : 0;
+    const now = Date.now();
+    if (lastInteraction > 0 && (now - lastInteraction) > SESSION_EXPIRE_MS) {
+      console.log("=== SESSION EXPIRED ===", { conversation_id: conv.id, age_min: Math.round((now - lastInteraction) / 60000) });
+      await supabase.from("conversations").update({ status: "closed" }).eq("id", conv.id);
+      // Fall through to create new conversation below
+    } else {
+      const state = (conv.bot_state && typeof conv.bot_state === "object" && (conv.bot_state as any).stage)
+        ? { ...defaultState(), ...(conv.bot_state as any) } as BotState
+        : defaultState();
+      
+      console.log("=== SESSION REUSED ===", { conversation_id: conv.id, state_stage: state.stage });
+      return { conversationId: conv.id, state };
+    }
   }
   
   // Create new conversation
@@ -437,17 +449,21 @@ async function processStateMachine(
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
-    // Pre-service message (fixed template, NOT naturalized)
-    if (!state.pre_service_sent) {
-      replies.push(getPreServiceMessage(state.service_type));
-      state.pre_service_sent = true;
+    // CONSOLIDATED: Pre-service + Prices in ONE message to guarantee order
+    const preServiceText = !state.pre_service_sent ? getPreServiceMessage(state.service_type) : "";
+    state.pre_service_sent = true;
+    
+    const priceMessages = formatQuoteMessages(state.service_type, state.model, items);
+    const priceText = priceMessages.join("\n\n");
+    
+    // Combine pre-service + prices into a single reply
+    if (preServiceText) {
+      replies.push(`${preServiceText}\n\n${priceText}`);
+    } else {
+      replies.push(priceText);
     }
     
-    // Price (fixed, NOT naturalized)
-    const priceMessages = formatQuoteMessages(state.service_type, state.model, items);
-    replies.push(...priceMessages);
-    
-    // Closing question based on service type
+    // Closing question as separate (2nd) message
     if (state.service_type === "bateria iphone") {
       replies.push(`Você sabe me dizer a saúde da sua bateria? Pode verificar em Ajustes → Bateria → Saúde da Bateria. Se estiver abaixo de 80%, recomendamos a troca! 😊\n\nFicou alguma dúvida? Gostaria de agendar o atendimento?`);
     } else if (state.service_type === "traseira de vidro") {

@@ -439,6 +439,19 @@ async function processStateMachine(
   // Map service keywords to group names
   const serviceMap: Record<string, string> = { tela: "tela iphone", bateria: "bateria iphone", traseira: "traseira de vidro" };
   
+  // Keywords indicating a service we don't quote automatically — triggers handoff
+  const unsupportedKeywords = ["câmera", "camera", "face id", "faceid", "alto-falante",
+    "alto falante", "microfone", "placa", "botão", "botao", "carregador", "conector",
+    "speaker", "dock", "sensor", "desbloqueio", "desbloquear", "software", "atualização",
+    "atualizacao", "touch id", "touchid", "sim", "chip", "antena", "vibra", "vibracall",
+    "auricular", "lanterna", "flash", "ligar", "nao liga", "não liga", "travou", "travado",
+    "lento", "reiniciando", "molhou", "agua", "água", "caiu na agua"];
+  
+  function isUnsupportedService(msg: string): boolean {
+    const t = msg.toLowerCase();
+    return unsupportedKeywords.some(kw => t.includes(kw));
+  }
+  
   // Fill slots (never overwrite existing with null)
   if (detectedService && !state.service_type) state.service_type = detectedService;
   if (detectedDevice && !state.device_type) state.device_type = detectedDevice;
@@ -480,28 +493,49 @@ async function processStateMachine(
     return { replies, action: "handoff", state, handoff_reason: "Aparelho não-Apple" };
   }
   
-  // ---- HANDLE NON-IPHONE APPLE DEVICES (handoff) ----
-  if (state.device_type && ["ipad", "macbook", "apple_watch", "airpods"].includes(state.device_type)) {
-    const deviceLabel = { ipad: "iPad", macbook: "MacBook", apple_watch: "Apple Watch", airpods: "AirPods" }[state.device_type] || state.device_type;
+  // ---- HANDLE HANDOFF: non-iPhone devices OR iPhone with unsupported service ----
+  const isNonIphoneApple = state.device_type && ["ipad", "macbook", "apple_watch", "airpods"].includes(state.device_type);
+  const isIphoneUnsupported = state.device_type === "iphone" && !state.service_type && isUnsupportedService(message);
+  
+  if (isNonIphoneApple || isIphoneUnsupported) {
+    const deviceLabels: Record<string, string> = { ipad: "iPad", macbook: "MacBook", apple_watch: "Apple Watch", airpods: "AirPods", iphone: "iPhone" };
+    const deviceLabel = deviceLabels[state.device_type!] || state.device_type!;
     
     if (!state.greeted) {
-      if (state.model || detectedService) {
-        replies.push(`${greeting}! Eu sou o ${identity.intro}. Vou encaminhar seu atendimento para um colega especialista em ${deviceLabel}. 😊`);
-      } else {
-        replies.push(`${greeting}! Eu sou o ${identity.intro}. Atendemos ${deviceLabel} sim! Para adiantar, me conta qual é o modelo e o que aconteceu com ele? Assim conseguimos agilizar o seu atendimento. 😊`);
-      }
       state.greeted = true;
+      
+      if (store.open) {
+        if (state.model || detectedService || isIphoneUnsupported) {
+          replies.push(`${greeting}! Eu sou o ${identity.intro}. Vou encaminhar seu atendimento para um colega especialista. 😊`);
+        } else {
+          replies.push(`${greeting}! Eu sou o ${identity.intro}. Atendemos ${deviceLabel} sim! Para adiantar, me conta qual é o modelo e o que aconteceu com ele? Assim conseguimos agilizar o seu atendimento. 😊`);
+        }
+      } else {
+        state.closed_notice_sent = true;
+        const hasDetails = state.model || detectedService || isIphoneUnsupported;
+        let msg = `${greeting}! Eu sou o ${identity.intro}. ${isNonIphoneApple ? `Atendemos ${deviceLabel} sim! ` : ""}😊\n\nEstamos fechados neste momento. Nosso horário de atendimento é ${store.schedule}. Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`;
+        if (!hasDetails) {
+          msg += `\n\nPara agilizarmos seu atendimento, me fala qual o problema do seu aparelho e o modelo.`;
+        }
+        replies.push(msg);
+      }
     } else {
-      replies.push(`Vou encaminhar seu atendimento para um colega especialista. 😊`);
-    }
-    
-    if (!store.open && !state.closed_notice_sent) {
-      replies.push(`Estamos fechados neste momento. Nosso horário de atendimento é ${store.schedule}. Assim que abrirmos, daremos andamento ao seu atendimento! 😊`);
-      state.closed_notice_sent = true;
+      if (store.open) {
+        replies.push(`Vou encaminhar seu atendimento para um colega especialista. 😊`);
+      } else {
+        if (!state.closed_notice_sent) {
+          replies.push(`Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
+          state.closed_notice_sent = true;
+        } else {
+          replies.push(`Anotado! Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
+        }
+      }
     }
     
     state.stage = "handoff";
-    state.handoff_reason = `Atendimento ${deviceLabel} — encaminhar para especialista`;
+    state.handoff_reason = isIphoneUnsupported
+      ? `Serviço iPhone não cotado automaticamente — encaminhar para especialista`
+      : `Atendimento ${deviceLabel} — encaminhar para especialista`;
     return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
   }
   
@@ -540,6 +574,23 @@ async function processStateMachine(
   
   // STAGE: Awaiting problem description
   if (state.stage === "awaiting_problem") {
+    // Check if user described an unsupported service (camera, Face ID, etc.)
+    if (!state.service_type && isUnsupportedService(message)) {
+      if (store.open) {
+        replies.push(`Entendi! Vou encaminhar seu atendimento para um colega especialista. 😊`);
+      } else {
+        const hasModel = !!state.model;
+        let msg = `Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`;
+        if (!hasModel) {
+          msg += `\n\nPara agilizarmos seu atendimento, me fala qual o modelo do seu aparelho.`;
+        }
+        replies.push(msg);
+      }
+      state.stage = "handoff";
+      state.handoff_reason = "Serviço iPhone não cotado automaticamente — encaminhar para especialista";
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+    
     if (state.service_type && state.model) {
       state.stage = "ready_quote";
       // Fall through to ready_quote

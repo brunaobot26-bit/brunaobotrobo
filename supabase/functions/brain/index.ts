@@ -144,9 +144,11 @@ function buildSystemPrompt(nowHour: number, context: any): string {
 2. LEIA O HISTÓRICO. Se o cliente já informou algo, NÃO pergunte de novo.
 3. Se o cliente diz "iPhone 13" sem Pro/Pro Max, é o iPhone 13 normal.
 4. NUNCA invente preços. SEMPRE use get_quote.
-5. Use "---" (três hifens em linha sozinha) para separar mensagens que devem ser enviadas individualmente no WhatsApp.
+5. Use "---" (três hifens em linha sozinha) para separar mensagens que devem ser enviadas individualmente no WhatsApp. CADA mensagem separada por --- vira uma mensagem SEPARADA no WhatsApp. SEMPRE use --- entre blocos diferentes.
+6. As 3 fases (Apresentação → Condições e Valores → Condução para Agendamento) são OBRIGATÓRIAS e SEQUENCIAIS. NUNCA pule uma fase. Mesmo que o cliente já tenha dado todas as informações, você DEVE passar pela apresentação primeiro.
 
-## ========== 1ª FASE: APRESENTAÇÃO ==========
+## ========== 1ª FASE: APRESENTAÇÃO (OBRIGATÓRIA) ==========
+ESTA FASE É OBRIGATÓRIA EM TODA PRIMEIRA INTERAÇÃO. Mesmo que o cliente já diga o problema e o modelo, faça a apresentação primeiro e só depois passe para as condições e valores.
 
 Quando o cliente envia a primeira mensagem, há duas possibilidades:
 

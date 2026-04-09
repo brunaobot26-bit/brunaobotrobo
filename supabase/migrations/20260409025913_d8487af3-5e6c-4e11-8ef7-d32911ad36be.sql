@@ -1,0 +1,1 @@
+UPDATE public.conversations SET status = 'closed' WHERE contact_id = '9422c277-c847-4440-87c9-7eaeb58a79e6' AND status = 'open'

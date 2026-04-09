@@ -339,8 +339,8 @@ async function callGPT(messages: any[], systemPrompt: string, apiKey: string): P
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       tools,
       tool_choice: "auto",
-      temperature: 0.7,
-      max_tokens: 500,
+      temperature: 0.5,
+      max_tokens: 1000,
     }),
   });
 

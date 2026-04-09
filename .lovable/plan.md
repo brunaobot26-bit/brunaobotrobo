@@ -1,46 +1,50 @@
 
 
-## Dois ajustes no post_quote
+## Tratar mídia (áudio/foto/vídeo) como handoff
 
-### Problema 1: "Sim, quebrou a traseira também" → agendamento em vez de handoff
+### O que mudar
 
-No `post_quote`, o bloco de agendamento captura `\bsim\b` e não detecta dúvida diagnóstica (`hasDiagnosticDoubt`). Mas o cliente está mencionando **outro serviço** — isso deveria ser handoff por múltiplos serviços.
+No `supabase/functions/brain/index.ts`, o n8n envia o campo `message_type` no body (ex: `"text"`, `"audio"`, `"image"`, `"video"`, `"sticker"`, `"document"`). Hoje o brain não lê esse campo.
 
-**Solução:** No início do bloco `post_quote` (antes dos 4 caminhos), rodar `detectMultipleServices` combinando a mensagem atual com o `service_type` já detectado no state. Se resultar em 2+ serviços, fazer handoff de múltiplos.
+### Implementação
+
+**1. Ler `message_type` do body** (linha ~889):
+```typescript
+const messageType: string = body.message_type || "text";
+```
+
+**2. Guardar `message_type` no `saveInboundMessage`** — já salva como `"text"` hardcoded, passar o valor real.
+
+**3. Checar mídia ANTES do check de mensagem vazia** (linha ~922), logo após o failsafe de `contactId/channelId`:
 
 ```typescript
-// No início do post_quote, antes do path 1:
-const currentMsg = message.toLowerCase();
-const additionalServices = detectMultipleServices(currentMsg);
-const alreadyHasService = state.service_type || "";
-// Check if new message mentions a DIFFERENT service than what was quoted
-const allServices = new Set<string>();
-if (/tela/.test(alreadyHasService)) allServices.add("tela");
-if (/bateria/.test(alreadyHasService)) allServices.add("bateria");
-if (/traseira/.test(alreadyHasService)) allServices.add("traseira");
-additionalServices.forEach(s => allServices.add(s));
-
-if (allServices.size >= 2) {
-  // handoff múltiplos serviços (mesma mensagem do bloco existente)
-  ...
+if (messageType !== "text") {
+  // Save inbound message with correct type
+  await saveInboundMessage(conversationId, contactId, message || `[${messageType}]`, externalMessageId, messageTimestamp, messageType);
+  
+  if (store.open) {
+    // Handoff silencioso — sem mensagem
+    return { replies: [], action: "handoff", state, handoff_reason: `Mídia: ${messageType}` };
+  } else {
+    // iHelper — mensagem gentil
+    return {
+      replies: ["Desculpa, não consigo ouvir áudios e ver imagens/vídeos ainda. Por gentileza, adiantar por escrito aqui o que tu precisas, senão amanhã assim que abrirmos nosso técnico certificado Apple te retorna. 😊"],
+      action: "handoff",
+      state,
+      handoff_reason: `Mídia: ${messageType}`
+    };
+  }
 }
 ```
 
-### Problema 2: "Vou te encaminhar para o Emerson" quando JÁ é o Emerson
+**Nota:** A checagem de mídia precisa acontecer DEPOIS da sessão ser criada (para ter `store` e `conversationId`), mas ANTES do debounce e do `think()`. Vou posicionar entre a linha 949 (save inbound) e 951 (debounce), pois nesse ponto já temos `store`, `state` e `conversationId`.
 
-Quando a loja está aberta, o bot É o Emerson. Dizer "vou encaminhar para o Emerson" não faz sentido.
-
-**Solução:** Mudar a mensagem de agendamento para:
-- **Loja aberta (Emerson):** `"Ótimo! Vamos seguir com seu agendamento então. 😊"`
-- **Loja fechada (iHelper):** manter `"...Vou encaminhar para o Emerson finalizar o agendamento assim que abrirmos. 😊"`
-
-Aplicar a mesma correção em todas as mensagens de handoff para agendamento que mencionam "encaminhar para o Emerson" quando já é o Emerson atendendo.
+**4. Atualizar `saveInboundMessage`** para aceitar `messageType` como parâmetro opcional (default `"text"`).
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — detecção de novo serviço no post_quote + correção de mensagem de agendamento
+- `supabase/functions/brain/index.ts` — ler `message_type`, checar mídia, handoff silencioso/mensagem
 - Deploy da edge function `brain`
-- Reset conversa de teste
 
 ### Risco
-Baixo — adiciona uma checagem antes dos paths existentes. Fluxo de serviço único permanece intacto.
+Baixo — é uma guarda no início do fluxo. Mensagens de texto continuam passando normalmente.
 

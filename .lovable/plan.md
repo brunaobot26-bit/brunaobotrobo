@@ -1,194 +1,77 @@
 
-Objetivo: corrigir a causa real do “robô burro/repetido”. O problema principal não está mais nas regras de atendimento em si; está no fato de o Brain estar recebendo mensagens sem identificação de sessão, então ele responde cada entrada como se fosse um primeiro contato.
 
-## Diagnóstico confirmado
+## Diagnóstico Confirmado
 
-Achei a causa raiz nos logs e no workflow atual:
+### Problema 1: Sessão anterior não foi limpa
+Os logs mostram claramente:
+- Às 03:45:10 → primeira mensagem "boa noite" com IDs válidos → sessão CRIADA, saudação ENVIADA com horário de funcionamento
+- Às 03:48:16 → segundo teste "Boa noite!" + "Tudo bem?" → sessão REUTILIZADA (conversation `0f342a42...`) → `greeted: true`, `closed_notice_sent: true` já estavam marcados
+- Resultado: o Brain pulou a saudação porque já tinha saudado no teste anterior (3 minutos antes)
 
-1. O Brain recebeu estas duas entradas separadas:
-   - `boa noite1`
-   - `tudo bem?`
+**Não perdeu contexto — reutilizou a sessão do teste anterior.**
 
-2. Nessas duas chamadas, os logs mostram:
-   - `contact_id: ""`
-   - `channel_id: ""`
-   - `conversation_id: ""`
+### Problema 2: Ordem das mensagens invertida no WhatsApp
+O Brain retornou 3 replies na ordem correta:
+1. Pre-service (garantia, reparo express...)
+2. Preços (Infinity/Essential)
+3. Pergunta de fechamento
 
-3. Quando isso acontece, no `brain/index.ts`:
-   - `findOrCreateConversation(...)` não roda
-   - `saveInboundMessage(...)` não salva
-   - o debounce de 6s não agrega mensagens
-   - o estado não é reutilizado
-   - a saudação reinicia do zero
+Mas no WhatsApp chegou: Preços → Pergunta → Pre-service.
 
-Resultado: ele responde 2 vezes, se reapresenta 2 vezes e “esquece” o contexto.
+**Causa**: O n8n "Preparar Outbound" cria 3 items separados e o n8n envia todos simultaneamente (sem delay entre eles). A Evolution API processa em paralelo e entrega fora de ordem.
 
-Em resumo: o Brain está correto em partes, mas o fluxo real está chegando “cego”.
+---
 
-## Onde o problema está
+## Plano de Correção (2 partes)
 
-### Workflow n8n afetado
-`WA - Fase 1 MVP iHelpU (clean rebuild)`  
-ID: `dsRhwCNmK5L83miU`
+### Parte 1: Brain (eu faço e deploy)
 
-### Pontos mais suspeitos no fluxo
-- `VERDE | HTTP - Buscar Canal`
-- `VERDE | Code - Normalizar Canal`
-- `VERDE | HTTP - Upsert Contato`
-- `VERDE | Code - Normalizar Contato`
-- `VERMELHO | Code - Montar Payload Brain`
-- `VERMELHO | HTTP - Chamar Brain`
+**A. Consolidar replies em menos mensagens**
+Em vez de retornar 3 replies separados que o n8n pode embaralhar, o Brain vai combinar:
+- Pre-service + Preços = 1 mensagem
+- Pergunta de fechamento = 1 mensagem
 
-Hoje, o Brain está sendo chamado sem os dois campos obrigatórios de sessão:
-- `contact_id`
-- `whatsapp_channel_id`
+Isso garante ordem independente do n8n.
 
-## Plano de correção
+**B. Fechar sessões antigas automaticamente**
+Antes de buscar conversa aberta, o Brain vai verificar se a última interação foi há mais de 30 minutos. Se sim, fecha a conversa antiga e cria uma nova. Isso evita que testes anteriores contaminem novos.
 
-### 1. Travar o contrato antes de chamar o Brain
-Adicionar validação no fluxo para que o Brain só seja chamado se estes campos existirem:
-- `message`
-- `contact_id`
-- `whatsapp_channel_id`
+**C. Manter o failsafe de IDs vazios** (já está funcionando, como vimos no log das 03:45:04)
 
-Se `contact_id` ou `channel_id` vierem vazios:
-- não chamar o Brain
-- parar a execução com erro explícito no n8n
-- registrar claramente qual nó falhou em popular o dado
+### Parte 2: n8n (JSON completo para importar)
 
-Isso evita resposta errada “bonita”, que parece regra ruim mas na verdade é sessão quebrada.
+Vou gerar o JSON completo do workflow com estas melhorias:
 
-### 2. Corrigir a cadeia de resolução de canal e contato
-Ajustar os nós verdes para garantir que sempre saiam com:
-- `channel_id` válido a partir da instância Evolution
-- `contact_id` válido a partir do upsert no Supabase
+1. **Adicionar nó "Wait 2s" entre Enviar Evolution e Salvar Outbound** — garante que as mensagens cheguem na ordem certa (uma de cada vez)
+2. **Usar "Split In Batches" (batch size 1) antes de Enviar** — força processamento sequencial dos replies
+3. **Manter todo o resto igual** — Webhook, Normalizar Inbound, Buscar Canal, Normalizar Canal, Upsert Contato, Normalizar Contato, Montar Payload, Chamar Brain
 
-O foco aqui é deixar o item que sai de `VERDE | Code - Normalizar Contato` sempre com:
+Fluxo final:
 ```text
-contact_id
-channel_id
-contact_phone_number
-contact_wa_id
-message_text
-message_timestamp
+Webhook → Normalizar Inbound → Buscar Canal → Normalizar Canal 
+→ Upsert Contato → Normalizar Contato → Montar Payload Brain 
+→ Chamar Brain → Preparar Outbound → Split In Batches (1) 
+→ IF Action skip? → Enviar Evolution → Wait 2s → Salvar Outbound 
+→ IF Handoff? → Marcar Handoff
 ```
 
-### 3. Endurecer o payload enviado ao Brain
-No `Montar Payload Brain`, garantir que o payload final contenha sempre:
-```text
-message
-contact_id
-whatsapp_channel_id
-contact_first_name
-contact_display_name
-external_message_id
-message_timestamp
-```
+### Detalhes técnicos
 
-Sem isso, o Brain não consegue:
-- abrir/reusar conversa
-- agregar rajadas
-- lembrar estágio do atendimento
+**Brain — Consolidação de replies (ready_quote stage):**
+- Pre-service + preços numa só mensagem
+- Pergunta de fechamento separada
+- Total: 2 mensagens em vez de 3
 
-### 4. Colocar um failsafe dentro do Brain
-Mesmo com n8n corrigido, vou blindar o Brain para não repetir esse problema.
+**Brain — Auto-expire de sessão:**
+- Se `last_interaction_at` > 30 min atrás, fechar conversa antiga e criar nova
+- Garante que cada teste (e cada cliente real) comece limpo
 
-Se chegar requisição sem `contact_id` ou `whatsapp_channel_id`, o Brain não deve responder normalmente.  
-Ele deve retornar algo neutro (`skip`/erro controlado), em vez de saudar como se fosse um primeiro contato.
+**n8n — Sequential send:**
+- Split In Batches com batch size 1
+- Wait de 2 segundos entre cada envio
+- Garante ordem de entrega no WhatsApp
 
-Assim evitamos que uma falha de integração vire atendimento ruim.
+### Entregáveis
+1. Deploy do Brain corrigido (eu faço)
+2. JSON completo do workflow n8n para tu importar (eu gero e entrego aqui)
 
-### 5. Adicionar anti-duplicação real no Brain
-Hoje existe debounce por mensagens salvas, mas ele depende da conversa existir.
-
-Vou reforçar com deduplicação por evento, usando:
-- `external_message_id` quando existir
-- fallback por combinação de texto + timestamp + contato
-
-Também vou passar a usar o campo de estado já existente (`last_processed_at`) para impedir resposta duplicada ao mesmo evento.
-
-Isso protege contra:
-- duas mensagens em sequência
-- reentrega do webhook
-- execução duplicada do n8n
-- repetição da saudação
-
-### 6. Ajustar a experiência de saudação
-Depois da sessão estabilizada, a saudação passa a obedecer corretamente:
-- identifica como iHelper só 1 vez
-- informa loja fechada só 1 vez
-- segunda mensagem do cliente complementa a primeira, não reinicia tudo
-
-Exemplo esperado para:
-```text
-boa noite1
-tudo bem?
-```
-Saída correta:
-- 1 única resposta consolidada
-- sem reapresentação duplicada
-- sem repetir horário duas vezes
-
-## Validação que vou considerar obrigatória
-
-Vou validar estes cenários após a correção:
-
-1. Saudação quebrada em 2 mensagens
-```text
-boa noite
-tudo bem?
-```
-Esperado: 1 resposta consolidada
-
-2. Problema quebrado em 2 mensagens
-```text
-quebrei a tela
-do meu iphone 13
-```
-Esperado: entender como mensagem única e pedir/seguir fluxo correto
-
-3. Saudação + problema
-```text
-boa noite, quebrei a tela do meu iphone 13
-```
-Esperado: apresentação única + pré-atendimento + valores na ordem certa
-
-4. iPad
-Esperado: resposta curta + handoff
-
-5. Samsung/Motorola
-Esperado: “somos especializados em Apple” + handoff, sem floreio
-
-6. Verificação técnica
-- mesmo `conversation_id` entre mensagens do mesmo contato
-- `bot_state` persistindo
-- nenhum `BRAIN INPUT` com `contact_id`/`channel_id` vazios
-- nenhuma saudação duplicada para a mesma interação
-
-## Detalhes técnicos
-
-### Evidência forte encontrada
-Nos logs recentes do Brain:
-```text
-BRAIN INPUT => message:"boa noite1", contact_id:"", channel_id:""
-BRAIN INPUT => message:"tudo bem?", contact_id:"", channel_id:""
-BRAIN OUTPUT => conversation_id:""
-```
-
-Isso explica exatamente por que:
-- o debounce não agregou
-- a conversa não teve memória
-- a saudação repetiu
-
-### Arquivo principal afetado
-- `supabase/functions/brain/index.ts`
-
-### Integração principal afetada
-- workflow n8n `dsRhwCNmK5L83miU`
-
-## Escopo da próxima implementação
-- corrigir passagem de `contact_id` e `channel_id` no n8n
-- impedir chamada inválida ao Brain
-- blindar o Brain contra requests sem sessão
-- adicionar deduplicação por evento
-- revalidar ponta a ponta os cenários de saudação, tela, bateria, traseira, iPad e Samsung

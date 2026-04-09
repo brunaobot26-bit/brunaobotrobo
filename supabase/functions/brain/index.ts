@@ -439,6 +439,19 @@ async function processStateMachine(
   // Map service keywords to group names
   const serviceMap: Record<string, string> = { tela: "tela iphone", bateria: "bateria iphone", traseira: "traseira de vidro" };
   
+  // Keywords indicating a service we don't quote automatically — triggers handoff
+  const unsupportedKeywords = ["câmera", "camera", "face id", "faceid", "alto-falante",
+    "alto falante", "microfone", "placa", "botão", "botao", "carregador", "conector",
+    "speaker", "dock", "sensor", "desbloqueio", "desbloquear", "software", "atualização",
+    "atualizacao", "touch id", "touchid", "sim", "chip", "antena", "vibra", "vibracall",
+    "auricular", "lanterna", "flash", "ligar", "nao liga", "não liga", "travou", "travado",
+    "lento", "reiniciando", "molhou", "agua", "água", "caiu na agua"];
+  
+  function isUnsupportedService(msg: string): boolean {
+    const t = msg.toLowerCase();
+    return unsupportedKeywords.some(kw => t.includes(kw));
+  }
+  
   // Fill slots (never overwrite existing with null)
   if (detectedService && !state.service_type) state.service_type = detectedService;
   if (detectedDevice && !state.device_type) state.device_type = detectedDevice;

@@ -271,7 +271,20 @@ function detectDevice(msg: string): string | null {
 
 function getQuote(serviceType: string, model: string): any[] | null {
   const key = `${serviceType}::${model}`;
-  return lookupData.items_by_group_model[key] || null;
+  // 1. Match exato
+  if (lookupData.items_by_group_model[key]) {
+    return lookupData.items_by_group_model[key] as any[];
+  }
+  // 2. Fallback: procurar modelo dentro de keys combo (ex: "12 pro" em "12 / 12 pro" ou "12/12 pro")
+  const norm = (s: string) => s.replace(/\s*\/\s*/g, '/').toLowerCase();
+  const normalizedModel = norm(model);
+  const results: any[] = [];
+  for (const [k, v] of Object.entries(lookupData.items_by_group_model)) {
+    if (k.startsWith(serviceType + "::") && norm(k).includes(normalizedModel)) {
+      results.push(...(v as any[]));
+    }
+  }
+  return results.length > 0 ? results : null;
 }
 
 function getPreServiceMessage(serviceType: string): string {

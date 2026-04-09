@@ -413,11 +413,6 @@ async function processWithGPT(
     replies = [reply.trim()];
   }
 
-  // Prepend presentation messages (Phase 1) if any
-  if (presentationPrefix.length > 0) {
-    replies = [...presentationPrefix, ...replies];
-  }
-
   return { replies: replies.length ? replies : [reply], action, data };
 }
 

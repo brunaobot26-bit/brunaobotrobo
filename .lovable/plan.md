@@ -1,62 +1,40 @@
 
 
-## Ajuste: priorizar corretamente agendamento vs dúvida diagnóstica no post_quote
+## Fix: "air" alias matching "cair" (and similar false positives)
 
-### Problema com o plano anterior
+### Causa raiz
 
-Mover dúvida diagnóstica para **antes** do agendamento quebraria casos como:
-- "Sim, vocês tem horário para 14:00hrs de Segunda?" — contém `?` → iria para diagnóstico em vez de agendamento
+No `detectModel` (linha 248), aliases com mais de 2 caracteres usam `t.includes(alias)`. O alias `"air"` tem 3 chars, então passa direto no check de short alias (<=2). A palavra `"cair"` contém a substring `"air"`, causando falso positivo.
 
-Manter diagnóstico **depois** do agendamento (como está hoje) quebra:
-- "Sim, é a bateria mesmo o problema?" — contém `sim` → vai para agendamento em vez de diagnóstico
+Isso pode acontecer com outros aliases curtos de 3 chars no futuro também.
 
-### Solução: checagem combinada
+### Solução
 
-A ordem fica: **agendamento → objeção → diagnóstico → fallback**, mas a regex de agendamento ganha uma condição extra: só dispara se a mensagem **não contiver keywords diagnósticas** (exceto `?` sozinho quando acompanhado de keywords de agendamento).
+Para o alias `"air"`, exigir **word boundary** (`\b`) em vez de `includes()`. A forma mais limpa: tratar aliases de 3 chars ou menos que não contêm números da mesma forma que os de <=2 chars — usando regex com word boundary.
 
-Lógica concreta:
+Mudança concreta na linha 248 do `detectModel`:
 
 ```typescript
-if (state.stage === "post_quote") {
-  const t = message.toLowerCase();
+// Antes:
+if (t.includes(alias)) return canonical;
 
-  const hasScheduleIntent = /\b(agendar|agenda|marcar|horário|horario|quero|vamos|bora)\b/.test(t);
-  const hasDiagnosticDoubt = /(\bserá\b|\bsera\b|\bcerteza\b|\bdiagnóstico\b|\bdiagnostico\b|\bpode ser\b|\bcomo saber\b|\bproblema\b|\bdefeito\b|\bcausa\b|\bsaúde\b|\bsaude\b|\d+\s*%)/.test(t);
-
-  // "sim" sozinho ou com intent de agendamento → agendamento
-  // "sim" + dúvida diagnóstica (sem intent de agendamento) → diagnóstico
-  if ((hasScheduleIntent || /\b(sim)\b/.test(t)) && !hasDiagnosticDoubt) {
-    // → handoff agendamento (código atual)
-  }
-
-  if (/\b(caro|muito|não|nao|pensar|depois|outro)\b/.test(t) && !hasDiagnosticDoubt) {
-    // → handoff objeção (código atual)
-  }
-
-  if (hasDiagnosticDoubt || /\?/.test(t)) {
-    // → handoff diagnóstico
-  }
-
-  // fallback
+// Depois:
+if (alias.length <= 3 && !/\d/.test(alias)) {
+  // Short text-only aliases (like "air") need word boundary to avoid "cair" → "air"
+  const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`\\b${escaped}\\b`, "i").test(t)) return canonical;
+} else {
+  if (t.includes(alias)) return canonical;
 }
 ```
 
-**Exemplos de comportamento:**
+Isso garante que `"air"` só casa quando é uma palavra isolada (ex: `"iphone air"`, `"é o air"`) e não dentro de `"cair"`, `"pair"`, etc.
 
-| Mensagem | Schedule? | Diagnostic? | Resultado |
-|---|---|---|---|
-| "Sim" | sim+true | false | ✅ Agendamento |
-| "Sim, tem horário às 14h de segunda?" | horário=true | false | ✅ Agendamento |
-| "Sim, é a bateria mesmo o problema?" | sim apenas | problema=true | ✅ Diagnóstico |
-| "A bateria está com 95%. Será que é ela?" | false | será+95%=true | ✅ Diagnóstico |
-| "Tem certeza que é bateria?" | false | certeza=true | ✅ Diagnóstico |
-| "Não, tá caro" | false (objeção) | false | ✅ Objeção |
-
-### Mudança concreta
-- **`supabase/functions/brain/index.ts`** — reescrever bloco `post_quote` (linhas 773-807) com lógica combinada
+### Arquivos alterados
+- `supabase/functions/brain/index.ts` — word boundary para aliases curtos (<=3 chars sem dígitos) no `detectModel`
 - Deploy da edge function `brain`
 - Reset conversa de teste
 
 ### Risco
-Mínimo — mesmos 4 caminhos, apenas com detecção mais inteligente de qual usar.
+Mínimo — aliases como `"8"`, `"11"`, `"se"` já têm tratamento especial. Essa mudança só adiciona proteção para aliases textuais curtos como `"air"`.
 

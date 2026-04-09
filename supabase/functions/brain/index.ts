@@ -328,12 +328,18 @@ async function processStateMachine(
   const detectedDevice = detectDeviceType(message);
   
   // Merge slots (never overwrite with null)
-  if (detectedService) state.service_type = detectedService;
+  if (detectedDevice) state.device_type = detectedDevice;
+  
+  // Only set service_type for iPhones (or if device not yet determined)
+  if (detectedService) {
+    if (!state.device_type || state.device_type === "iphone") {
+      state.service_type = detectedService;
+    }
+  }
   if (detectedModel) {
     state.model = detectedModel;
     if (!state.device_type) state.device_type = "iphone";
   }
-  if (detectedDevice) state.device_type = detectedDevice;
   
   // If we couldn't detect deterministically, use GPT for ambiguous messages
   if (!state.service_type && !state.device_type && !isJustGreeting(message) && !detectedModel) {

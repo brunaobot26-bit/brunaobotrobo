@@ -854,7 +854,7 @@ async function processStateMachine(
 }
 
 // ==================== SAVE INBOUND MESSAGE ====================
-async function saveInboundMessage(conversationId: string, contactId: string, message: string, externalMessageId?: string, messageTimestamp?: string) {
+async function saveInboundMessage(conversationId: string, contactId: string, message: string, externalMessageId?: string, messageTimestamp?: string, messageType: string = "text") {
   if (!supabase || !conversationId) return;
   try {
     await supabase.from("messages").insert({
@@ -862,7 +862,7 @@ async function saveInboundMessage(conversationId: string, contactId: string, mes
       contact_id: contactId,
       direction: "inbound",
       sender_type: "customer",
-      message_type: "text",
+      message_type: messageType,
       content_text: message,
       external_message_id: externalMessageId || null,
       received_at: messageTimestamp ? new Date(Number(messageTimestamp) * 1000).toISOString() : new Date().toISOString(),
@@ -889,6 +889,7 @@ serve(async (req) => {
     const message: string = body.message || "";
     const contactId: string = body.contact_id || "";
     const channelId: string = body.whatsapp_channel_id || "";
+    const messageType: string = body.message_type || "text";
     const customerFirstName: string = body.contact_first_name || "";
     const customerName: string = body.contact_display_name || customerFirstName || "amigo";
     const externalMessageId: string = body.external_message_id || "";
@@ -946,7 +947,42 @@ serve(async (req) => {
     }
 
     // ---- SAVE INBOUND MESSAGE ----
-    await saveInboundMessage(conversationId, contactId, message, externalMessageId, messageTimestamp);
+    await saveInboundMessage(conversationId, contactId, message || `[${messageType}]`, externalMessageId, messageTimestamp, messageType);
+
+    // ---- MEDIA CHECK (audio/image/video/sticker/document) ----
+    if (messageType !== "text") {
+      const store = getStoreInfo();
+      console.log(`=== BRAIN MEDIA === type=${messageType}, store_open=${store.open}`);
+      
+      // Update conversation to handoff
+      if (supabase && conversationId) {
+        await supabase.from("conversations").update({
+          handoff: true,
+          bot_state: state,
+          updated_at: new Date().toISOString(),
+        }).eq("id", conversationId);
+      }
+
+      if (store.open) {
+        // Handoff silencioso — sem mensagem
+        return new Response(JSON.stringify({
+          replies: [],
+          action: "handoff",
+          state,
+          conversation_id: conversationId,
+          handoff_reason: `Mídia: ${messageType}`,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } else {
+        // iHelper — mensagem gentil
+        return new Response(JSON.stringify({
+          replies: ["Desculpa, não consigo ouvir áudios e ver imagens/vídeos ainda. Por gentileza, adiantar por escrito aqui o que tu precisas, senão amanhã assim que abrirmos nosso técnico certificado Apple te retorna. 😊"],
+          action: "handoff",
+          state,
+          conversation_id: conversationId,
+          handoff_reason: `Mídia: ${messageType}`,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
 
     // ---- DEBOUNCE ----
     if (supabase && conversationId) {

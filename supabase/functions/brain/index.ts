@@ -574,6 +574,23 @@ async function processStateMachine(
   
   // STAGE: Awaiting problem description
   if (state.stage === "awaiting_problem") {
+    // Check if user described an unsupported service (camera, Face ID, etc.)
+    if (!state.service_type && isUnsupportedService(message)) {
+      if (store.open) {
+        replies.push(`Entendi! Vou encaminhar seu atendimento para um colega especialista. 😊`);
+      } else {
+        const hasModel = !!state.model;
+        let msg = `Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`;
+        if (!hasModel) {
+          msg += `\n\nPara agilizarmos seu atendimento, me fala qual o modelo do seu aparelho.`;
+        }
+        replies.push(msg);
+      }
+      state.stage = "handoff";
+      state.handoff_reason = "Serviço iPhone não cotado automaticamente — encaminhar para especialista";
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+    
     if (state.service_type && state.model) {
       state.stage = "ready_quote";
       // Fall through to ready_quote

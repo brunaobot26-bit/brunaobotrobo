@@ -32,50 +32,50 @@ const lookupData: any = {
   "models": {
     "iphone se 2ª geração": ["iphone se 2", "iphone se 2020", "se 2", "se 2a geração", "iphone se 2nd geração"],
     "iphone se 3ª geração": ["iphone se 3", "iphone se 2022", "se 3", "se 3a geração"],
-    "iphone xs max": ["iphone xsmax", "xs max", "iphone xs max"],
-    "iphone xs": ["iphone xs"],
-    "iphone xr": ["iphone xr"],
-    "iphone x": ["iphone x"],
+    "iphone xs max": ["iphone xsmax", "xs max", "iphone xs max", "xsmax"],
+    "iphone xs": ["iphone xs", "xs"],
+    "iphone xr": ["iphone xr", "xr"],
+    "iphone x": ["iphone x", "x"],
     "iphone 11 pro max": ["iphone 11 pro max"],
     "iphone 11 pro": ["iphone 11 pro"],
-    "iphone 11": ["iphone 11"],
+    "iphone 11": ["iphone 11", "11"],
     "iphone 12 pro max": ["iphone 12 pro max"],
     "iphone 12 pro": ["iphone 12 pro"],
     "iphone 12 mini": ["iphone 12 mini"],
-    "iphone 12": ["iphone 12"],
+    "iphone 12": ["iphone 12", "12"],
     "iphone 13 pro max": ["iphone 13 pro max"],
     "iphone 13 pro": ["iphone 13 pro"],
     "iphone 13 mini": ["iphone 13 mini"],
-    "iphone 13": ["iphone 13"],
+    "iphone 13": ["iphone 13", "13"],
     "iphone 14 pro max": ["iphone 14 pro max"],
     "iphone 14 pro": ["iphone 14 pro"],
     "iphone 14 plus": ["iphone 14 plus"],
-    "iphone 14": ["iphone 14"],
+    "iphone 14": ["iphone 14", "14"],
     "iphone 15 pro max": ["iphone 15 pro max"],
     "iphone 15 pro": ["iphone 15 pro"],
     "iphone 15 plus": ["iphone 15 plus"],
-    "iphone 15": ["iphone 15"],
+    "iphone 15": ["iphone 15", "15"],
     "iphone 16 pro max": ["iphone 16 pro max"],
     "iphone 16 pro": ["iphone 16 pro"],
     "iphone 16 plus": ["iphone 16 plus"],
-    "iphone 16": ["iphone 16"],
-    "iphone 16e": ["iphone 16e"],
+    "iphone 16": ["iphone 16", "16"],
+    "iphone 16e": ["iphone 16e", "16e"],
     "iphone 17 pro max": ["iphone 17 pro max"],
     "iphone 17 pro": ["iphone 17 pro"],
-    "iphone 17": ["iphone 17"],
-    "iphone air": ["iphone air"],
-    "iphone 8 plus": ["iphone 8 plus"],
-    "iphone 8": ["iphone 8"],
-    "iphone 7 plus": ["iphone 7 plus"],
-    "iphone 7": ["iphone 7"],
-    "iphone 6s plus": ["iphone 6s plus"],
-    "iphone 6s": ["iphone 6s"],
-    "iphone 6 plus": ["iphone 6 plus"],
-    "iphone 6": ["iphone 6"],
-    "iphone 5s/se": ["iphone 5s", "iphone se antigo", "iphone se 1", "5s/se"],
-    "iphone 5c": ["iphone 5c"],
-    "iphone 5": ["iphone 5"],
-    "iphone se": ["iphone se"]
+    "iphone 17": ["iphone 17", "17"],
+    "iphone air": ["iphone air", "air"],
+    "iphone 8 plus": ["iphone 8 plus", "8 plus"],
+    "iphone 8": ["iphone 8", "8"],
+    "iphone 7 plus": ["iphone 7 plus", "7 plus"],
+    "iphone 7": ["iphone 7", "7"],
+    "iphone 6s plus": ["iphone 6s plus", "6s plus"],
+    "iphone 6s": ["iphone 6s", "6s"],
+    "iphone 6 plus": ["iphone 6 plus", "6 plus"],
+    "iphone 6": ["iphone 6", "6"],
+    "iphone 5s/se": ["iphone 5s", "iphone se antigo", "iphone se 1", "5s/se", "5s"],
+    "iphone 5c": ["iphone 5c", "5c"],
+    "iphone 5": ["iphone 5", "5"],
+    "iphone se": ["iphone se", "se"]
   },
   "items_by_group_model": {} as Record<string, any[]>
 };
@@ -224,7 +224,7 @@ function detectService(msg: string): string | null {
   return null;
 }
 
-function detectModel(msg: string): string | null {
+function detectModel(msg: string, shortMatch = false): string | null {
   const t = msg.toLowerCase().replace(/[^a-z0-9\s\/]/g, "").trim();
   // Sort by length descending so "iphone 13 pro max" matches before "iphone 13"
   const sortedModels = Object.entries(lookupData.models as Record<string, string[]>)
@@ -232,7 +232,14 @@ function detectModel(msg: string): string | null {
   
   for (const [canonical, aliases] of sortedModels) {
     for (const alias of aliases) {
-      if (t.includes(alias)) return canonical;
+      // Short aliases (<=2 chars) only match when shortMatch is true (awaiting_model state)
+      if (alias.length <= 2 && !shortMatch) continue;
+      if (shortMatch && alias.length <= 2) {
+        // For short aliases, require exact match (not substring)
+        if (t === alias || t === `iphone ${alias}`) return canonical;
+      } else {
+        if (t.includes(alias)) return canonical;
+      }
     }
     if (t.includes(canonical)) return canonical;
   }

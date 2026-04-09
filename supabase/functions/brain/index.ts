@@ -36,32 +36,32 @@ const lookupData: any = {
     "iphone xs": ["iphone xs", "xs"],
     "iphone xr": ["iphone xr", "xr"],
     "iphone x": ["iphone x", "x"],
-    "iphone 11 pro max": ["iphone 11 pro max"],
-    "iphone 11 pro": ["iphone 11 pro"],
+    "iphone 11 pro max": ["iphone 11 pro max", "11 pro max"],
+    "iphone 11 pro": ["iphone 11 pro", "11 pro"],
     "iphone 11": ["iphone 11", "11"],
-    "iphone 12 pro max": ["iphone 12 pro max"],
-    "iphone 12 pro": ["iphone 12 pro"],
-    "iphone 12 mini": ["iphone 12 mini"],
+    "iphone 12 pro max": ["iphone 12 pro max", "12 pro max"],
+    "iphone 12 pro": ["iphone 12 pro", "12 pro"],
+    "iphone 12 mini": ["iphone 12 mini", "12 mini"],
     "iphone 12": ["iphone 12", "12"],
-    "iphone 13 pro max": ["iphone 13 pro max"],
-    "iphone 13 pro": ["iphone 13 pro"],
-    "iphone 13 mini": ["iphone 13 mini"],
+    "iphone 13 pro max": ["iphone 13 pro max", "13 pro max"],
+    "iphone 13 pro": ["iphone 13 pro", "13 pro"],
+    "iphone 13 mini": ["iphone 13 mini", "13 mini"],
     "iphone 13": ["iphone 13", "13"],
-    "iphone 14 pro max": ["iphone 14 pro max"],
-    "iphone 14 pro": ["iphone 14 pro"],
-    "iphone 14 plus": ["iphone 14 plus"],
+    "iphone 14 pro max": ["iphone 14 pro max", "14 pro max"],
+    "iphone 14 pro": ["iphone 14 pro", "14 pro"],
+    "iphone 14 plus": ["iphone 14 plus", "14 plus"],
     "iphone 14": ["iphone 14", "14"],
-    "iphone 15 pro max": ["iphone 15 pro max"],
-    "iphone 15 pro": ["iphone 15 pro"],
-    "iphone 15 plus": ["iphone 15 plus"],
+    "iphone 15 pro max": ["iphone 15 pro max", "15 pro max"],
+    "iphone 15 pro": ["iphone 15 pro", "15 pro"],
+    "iphone 15 plus": ["iphone 15 plus", "15 plus"],
     "iphone 15": ["iphone 15", "15"],
-    "iphone 16 pro max": ["iphone 16 pro max"],
-    "iphone 16 pro": ["iphone 16 pro"],
-    "iphone 16 plus": ["iphone 16 plus"],
+    "iphone 16 pro max": ["iphone 16 pro max", "16 pro max"],
+    "iphone 16 pro": ["iphone 16 pro", "16 pro"],
+    "iphone 16 plus": ["iphone 16 plus", "16 plus"],
     "iphone 16": ["iphone 16", "16"],
     "iphone 16e": ["iphone 16e", "16e"],
-    "iphone 17 pro max": ["iphone 17 pro max"],
-    "iphone 17 pro": ["iphone 17 pro"],
+    "iphone 17 pro max": ["iphone 17 pro max", "17 pro max"],
+    "iphone 17 pro": ["iphone 17 pro", "17 pro"],
     "iphone 17": ["iphone 17", "17"],
     "iphone air": ["iphone air", "air"],
     "iphone 8 plus": ["iphone 8 plus", "8 plus"],
@@ -510,7 +510,7 @@ async function processStateMachine(
     replies.push(msg);
     state.stage = "handoff";
     state.handoff_reason = `Múltiplos serviços: ${multiServices.join(", ")}`;
-    state.handoff_ack_sent = true;
+    state.handoff_ack_sent = true; // ack already sent in handoff trigger message
     return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
   }
 
@@ -526,7 +526,7 @@ async function processStateMachine(
       replies.push(store.open ? handoffMatch.message_open : handoffMatch.message_closed);
       state.stage = "handoff";
       state.handoff_reason = handoffMatch.reason;
-      state.handoff_ack_sent = true;
+      state.handoff_ack_sent = false;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
   }
@@ -597,7 +597,7 @@ async function processStateMachine(
     }
     state.greeted = true;
     state.stage = "non_apple_rejected";
-    state.handoff_ack_sent = true;
+    state.handoff_ack_sent = false;
     return { replies, action: "handoff", state, handoff_reason: "Aparelho não-Apple" };
   }
   
@@ -644,7 +644,7 @@ async function processStateMachine(
     state.handoff_reason = isIphoneUnsupported
       ? `Serviço iPhone não cotado automaticamente — encaminhar para especialista`
       : `Atendimento ${deviceLabel} — encaminhar para especialista`;
-    state.handoff_ack_sent = true;
+    state.handoff_ack_sent = false;
     return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
   }
   
@@ -697,7 +697,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = "Serviço iPhone não cotado automaticamente — encaminhar para especialista";
-      state.handoff_ack_sent = true;
+      state.handoff_ack_sent = false;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -740,7 +740,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = `Preço não encontrado: ${state.service_type} ${state.model}`;
-      state.handoff_ack_sent = true;
+      state.handoff_ack_sent = false;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
@@ -790,7 +790,7 @@ async function processStateMachine(
       }
       state.stage = "handoff";
       state.handoff_reason = "Cliente quer agendar atendimento";
-      state.handoff_ack_sent = true;
+      state.handoff_ack_sent = false;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
 
@@ -799,7 +799,7 @@ async function processStateMachine(
       replies.push(`Entendo! Vou te encaminhar para um colega que pode te ajudar melhor com isso. 😊`);
       state.stage = "handoff";
       state.handoff_reason = "Cliente com objeção ou dúvida pós-orçamento";
-      state.handoff_ack_sent = true;
+      state.handoff_ack_sent = false;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
 
@@ -808,7 +808,7 @@ async function processStateMachine(
       replies.push("Entendo a dúvida! Não tenho como afirmar com certeza, vou encaminhar teu atendimento para um técnico certificado Apple que vai poder te auxiliar melhor. 😊");
       state.stage = "handoff";
       state.handoff_reason = "Dúvida diagnóstica pós-orçamento";
-      state.handoff_ack_sent = true;
+      state.handoff_ack_sent = false;
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
 

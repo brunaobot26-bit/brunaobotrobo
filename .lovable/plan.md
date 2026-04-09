@@ -1,40 +1,57 @@
 
 
-## Fix: "air" alias matching "cair" (and similar false positives)
+## Plano: Executar testes end-to-end do Brain via curl
 
-### Causa raiz
+Vou chamar a edge function `brain` diretamente com mensagens simuladas para validar todos os cenários que construímos. Para cada teste, usarei um `contact_id` fictício diferente para garantir sessão limpa.
 
-No `detectModel` (linha 248), aliases com mais de 2 caracteres usam `t.includes(alias)`. O alias `"air"` tem 3 chars, então passa direto no check de short alias (<=2). A palavra `"cair"` contém a substring `"air"`, causando falso positivo.
+### Cenários a testar
 
-Isso pode acontecer com outros aliases curtos de 3 chars no futuro também.
+**Grupo 1 — Detecção de modelo**
+1. "cair" NÃO deve detectar iPhone Air (fix word boundary)
+2. "tela do meu x quebrada" → deve detectar iPhone X (contexto + alias curto)
+3. "iPhone 14 pro max" → detecção normal
 
-### Solução
+**Grupo 2 — Fluxo iPhone com serviço suportado**
+4. "trocar a tela do meu iPhone 13" → greeting + pre-service + preço (1 chamada)
+5. "quero trocar bateria" → pede modelo → enviar "15 pro" → preço
 
-Para o alias `"air"`, exigir **word boundary** (`\b`) em vez de `includes()`. A forma mais limpa: tratar aliases de 3 chars ou menos que não contêm números da mesma forma que os de <=2 chars — usando regex com word boundary.
+**Grupo 3 — Dispositivos não-iPhone**
+6. "trocar bateria do meu MacBook Pro 2020" → handoff direto
+7. "tela do meu iPad quebrou" → handoff direto
 
-Mudança concreta na linha 248 do `detectModel`:
+**Grupo 4 — Serviço não suportado iPhone**
+8. "meu iPhone não liga" → handoff (unsupported keyword)
+9. "problema na câmera do meu iPhone 15" → handoff
 
-```typescript
-// Antes:
-if (t.includes(alias)) return canonical;
+**Grupo 5 — Handoff keywords**
+10. "quero comprar um iPhone" → handoff compra/venda
+11. "quero falar com uma pessoa" → handoff humano
+12. "quero um desconto" → handoff negociação
 
-// Depois:
-if (alias.length <= 3 && !/\d/.test(alias)) {
-  // Short text-only aliases (like "air") need word boundary to avoid "cair" → "air"
-  const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (new RegExp(`\\b${escaped}\\b`, "i").test(t)) return canonical;
-} else {
-  if (t.includes(alias)) return canonical;
-}
-```
+**Grupo 6 — Post-quote (agendamento vs diagnóstico)**
+13. Após orçamento bateria: "Sim" → agendamento
+14. Após orçamento bateria: "Sim, é a bateria mesmo o problema?" → diagnóstico
+15. Após orçamento bateria: "Sim, tem horário às 14h?" → agendamento
 
-Isso garante que `"air"` só casa quando é uma palavra isolada (ex: `"iphone air"`, `"é o air"`) e não dentro de `"cair"`, `"pair"`, etc.
+**Grupo 7 — Múltiplos serviços**
+16. "preciso trocar tela e bateria" → handoff múltiplos
+
+**Grupo 8 — Correção de device**
+17. "trocar bateria" → bot assume iPhone → "é um MacBook" → handoff MacBook
+
+**Grupo 9 — Handoff ack**
+18. Após handoff, enviar outra mensagem → deve receber ack 1x, depois silêncio
+
+**Grupo 10 — Garantia vitalícia (texto correto)**
+19. Verificar que o pre-service de tela diz "Garantia vitalícia na tela - A maior do mercado e exclusividade iHelpU ✅" (sem menção Infinity/Essential)
+
+### Execução
+
+Cada teste será uma chamada `curl_edge_functions` com contact_id único (UUID gerado). Vou analisar os `replies` e `action` retornados para validar.
 
 ### Arquivos alterados
-- `supabase/functions/brain/index.ts` — word boundary para aliases curtos (<=3 chars sem dígitos) no `detectModel`
-- Deploy da edge function `brain`
-- Reset conversa de teste
+Nenhum — são apenas testes de leitura.
 
 ### Risco
-Mínimo — aliases como `"8"`, `"11"`, `"se"` já têm tratamento especial. Essa mudança só adiciona proteção para aliases textuais curtos como `"air"`.
+Zero — chamadas read-only à edge function com dados fictícios.
 

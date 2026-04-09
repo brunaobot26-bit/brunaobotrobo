@@ -454,6 +454,7 @@ serve(async (req) => {
 
     if (req.method === "POST") {
       const data = await req.json();
+      console.log("=== BRAIN INPUT ===", JSON.stringify({ message: data.message, history_length: (data.history || []).length, history: data.history, context: data.context }));
       const message = data.message || "";
 
       if (!message) {

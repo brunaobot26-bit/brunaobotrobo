@@ -309,11 +309,11 @@ function formatQuoteMessages(serviceType: string, model: string, items: any[]): 
     
     let msg = `Valores para troca de tela do ${modelDisplay}:\n\n`;
     if (infinity) {
-      const parcela = (infinity.final_price / 6).toFixed(2).replace(".", ",");
+      const parcela = (infinity.final_price * 1.07 / 6).toFixed(2).replace(".", ",");
       msg += `🔷 Infinity (qualidade premium):\nR$ ${infinity.final_price.toFixed(2).replace(".", ",")} à vista ou 6x de R$ ${parcela}\nGarantia VITALÍCIA na tela ✅\n\n`;
     }
     if (essential) {
-      const parcela = (essential.final_price / 6).toFixed(2).replace(".", ",");
+      const parcela = (essential.final_price * 1.07 / 6).toFixed(2).replace(".", ",");
       msg += `🔶 Essential (ótimo custo-benefício):\nR$ ${essential.final_price.toFixed(2).replace(".", ",")} à vista ou 6x de R$ ${parcela}\nGarantia de 1 ano ✅`;
     }
     return [msg.trim()];
@@ -321,13 +321,13 @@ function formatQuoteMessages(serviceType: string, model: string, items: any[]): 
   
   if (serviceType === "bateria iphone" && items.length > 0) {
     const item = items[0];
-    const parcela = (item.final_price / 6).toFixed(2).replace(".", ",");
+    const parcela = (item.final_price * 1.07 / 6).toFixed(2).replace(".", ",");
     return [`Valor para troca de bateria do ${modelDisplay}:\n\nR$ ${item.final_price.toFixed(2).replace(".", ",")} à vista ou 6x de R$ ${parcela}\nGarantia de 1 ano ✅`];
   }
   
   if (serviceType === "traseira de vidro" && items.length > 0) {
     const item = items[0];
-    const parcela = (item.final_price / 6).toFixed(2).replace(".", ",");
+    const parcela = (item.final_price * 1.07 / 6).toFixed(2).replace(".", ",");
     return [`Valor para troca da traseira de vidro do ${modelDisplay}:\n\nR$ ${item.final_price.toFixed(2).replace(".", ",")} à vista ou 6x de R$ ${parcela}\nGarantia de 1 ano ✅`];
   }
   

@@ -1,0 +1,1 @@
+UPDATE conversations SET status = 'closed' WHERE contact_id = (SELECT id FROM contacts WHERE phone_digits = '555181404179' LIMIT 1) AND status = 'open';

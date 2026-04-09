@@ -793,6 +793,15 @@ async function processStateMachine(
       return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
     }
     
+    // Dúvida diagnóstica / incerteza sobre o serviço
+    if (/(\?|será|sera|certeza|diagnóstico|diagnostico|pode ser|como saber|problema|defeito|causa|saúde|saude|\d+\s*%)/.test(t)) {
+      replies.push("Entendo a dúvida! Não tenho como afirmar com certeza, vou encaminhar teu atendimento para um técnico certificado Apple que vai poder te auxiliar melhor. 😊");
+      state.stage = "handoff";
+      state.handoff_reason = "Dúvida diagnóstica pós-orçamento";
+      state.handoff_ack_sent = true;
+      return { replies, action: "handoff", state, handoff_reason: state.handoff_reason };
+    }
+
     replies.push(`Posso te ajudar com mais alguma coisa? Se quiser agendar, é só me dizer! 😊`);
     return { replies, action: "reply", state };
   }

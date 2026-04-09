@@ -293,8 +293,8 @@ async function processStateMachine(
   state: BotState,
   customerName: string,
   history: any[]
-): Promise<{ replies: string[]; action: string; state: BotState; handoff_reason?: string }> {
-  const replies: string[] = [];
+): Promise<{ replies: Array<string | { text: string; delay_before: number }>; action: string; state: BotState; handoff_reason?: string }> {
+  const replies: Array<string | { text: string; delay_before: number }> = [];
   const store = getStoreInfo();
   const greeting = getTimeGreeting();
   const identity = store.identity;
@@ -686,9 +686,17 @@ serve(async (req) => {
       conversation_id: conversationId,
     }));
 
+    // Normalize replies: always output { text, delay_before }
+    const normalizedReplies = result.replies.map((r, i) => {
+      if (typeof r === "string") {
+        return { text: r, delay_before: i === 0 ? 0 : 1 };
+      }
+      return r;
+    });
+
     return new Response(
       JSON.stringify({
-        replies: result.replies,
+        replies: normalizedReplies,
         action: result.action,
         state: result.state,
         handoff_reason: result.handoff_reason || null,

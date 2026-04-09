@@ -245,7 +245,12 @@ function detectModel(msg: string, shortMatch = false): string | null {
         // For short aliases, require exact match (not substring)
         if (t === alias || t === `iphone ${alias}`) return canonical;
       } else {
-        if (t.includes(alias)) return canonical;
+        if (alias.length <= 3 && !/\d/.test(alias)) {
+          const esc = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          if (new RegExp(`\\b${esc}\\b`, "i").test(t)) return canonical;
+        } else {
+          if (t.includes(alias)) return canonical;
+        }
       }
     }
     if (t.includes(canonical)) return canonical;

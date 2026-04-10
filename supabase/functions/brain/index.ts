@@ -725,14 +725,27 @@ async function processStateMachine(
         replies.push(msg);
       }
     } else {
+      const hasDetails = state.model || detectedService || isIphoneUnsupported;
+      
       if (store.open) {
-        replies.push(`Vou encaminhar seu atendimento para um colega especialista. 😊`);
-      } else {
-        if (!state.closed_notice_sent) {
-          replies.push(`Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
-          state.closed_notice_sent = true;
+        if (hasDetails) {
+          replies.push(`Entendi! Vou encaminhar seu atendimento para um colega especialista. 😊`);
         } else {
-          replies.push(`Anotado! Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
+          replies.push(`Entendi! Mas para agilizar seu atendimento, me diz qual o modelo do seu ${deviceLabel}? 😊`);
+          return { replies, action: "continue", state, handoff_reason: null };
+        }
+      } else {
+        if (hasDetails) {
+          if (!state.closed_notice_sent) {
+            replies.push(`Entendi! Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
+            state.closed_notice_sent = true;
+          } else {
+            replies.push(`Entendi! Assim que a loja abrir, um técnico certificado Apple vai te chamar. 😊`);
+          }
+        } else {
+          replies.push(`Entendi! Mas para agilizar seu atendimento, me diz qual o modelo do seu ${deviceLabel}? Assim que a loja abrir, já encaminhamos direto para o técnico. 😊`);
+          if (!state.closed_notice_sent) state.closed_notice_sent = true;
+          return { replies, action: "continue", state, handoff_reason: null };
         }
       }
     }
